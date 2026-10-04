@@ -720,6 +720,15 @@ function Set-RegistryDword {
     }
 }
 
+function Get-FileVersionObject {
+    # Returns a [Version] built from a file's numeric version fields, or $null.
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    $vi = (Get-Item -LiteralPath $Path).VersionInfo
+    if (-not $vi) { return $null }
+    return (New-Object System.Version -ArgumentList $vi.FileMajorPart, $vi.FileMinorPart, $vi.FileBuildPart, $vi.FilePrivatePart)
+}
+
 function Set-XPHardening {
 <#
 .SYNOPSIS
@@ -870,9 +879,9 @@ function Get-XPHardeningStatus {
     Read-only check of the XP hardening baseline.
 .DESCRIPTION
     Checks the firewall, the services Set-XPHardening disables, SMB/NetBIOS,
-    the Guest account, AutoRun, the three wormable-flaw patches
-    (KB958644, KB4012598, KB4500331) and which TCP ports are listening on
-    the network. Changes nothing.
+    the Guest account, AutoRun, the three wormable-flaw fixes (by the file
+    version each fix installed, so superseding updates count) and which
+    TCP ports are listening on the network. Changes nothing.
 .PARAMETER PassThru
     Also return the findings as objects.
 .EXAMPLE
@@ -964,23 +973,42 @@ function Get-XPHardeningStatus {
     }
 
     Write-Section 'Patches'
+    # The three wormable flaws are checked by the version of the file each fix
+    # replaced, not by KB number: later updates (POSReady 2009 and others)
+    # supersede the original KBs, so a fully patched PC often lacks them.
+    # Minimum versions are from Microsoft's file-information tables (XP SP3, x86).
+    $sys32 = $env:windir + '\system32'
+    $fileChecks = @(
+        @{ Name = 'MS08-067, SMB worm flaw (Conficker)'; Kb = 'KB958644';  File = 'netapi32.dll';       Min = '5.1.2600.5694'
+           Fix = 'Legacy Update' },
+        @{ Name = 'MS17-010, SMBv1 (WannaCry)';          Kb = 'KB4012598'; File = 'drivers\srv.sys';    Min = '5.1.2600.7208'
+           Fix = 'Legacy Update, or KB4012598 from the Microsoft Update Catalog' },
+        @{ Name = 'CVE-2019-0708, Remote Desktop (BlueKeep)'; Kb = 'KB4500331'; File = 'drivers\termdd.sys'; Min = '5.1.2600.7701'
+           Fix = 'KB4500331 from the Microsoft Update Catalog (not offered through Windows Update on XP)' }
+    )
+    foreach ($c in $fileChecks) {
+        $path = $sys32 + '\' + $c.File
+        $leaf = ($c.File -split '\\')[-1]
+        $current = Get-FileVersionObject -Path $path
+        $minimum = New-Object System.Version -ArgumentList $c.Min
+        if (-not $current) {
+            $findings += New-Finding -Area 'Patches' -Level 'Info' -Message ('{0}: {1} not found, cannot check.' -f $c.Name, $leaf)
+        } elseif ($current -ge $minimum) {
+            $findings += New-Finding -Area 'Patches' -Level 'OK' -Message ('{0} patched: {1} {2} (fix is {3}).' -f $c.Name, $leaf, $current, $minimum)
+        } else {
+            $findings += New-Finding -Area 'Patches' -Level 'Risk' -Message ('{0} NOT patched: {1} {2}, needs {3} or later ({4}).' -f $c.Name, $leaf, $current, $minimum, $c.Kb) -Fix $c.Fix
+        }
+    }
+
+    # AutoRun fix: checked by KB number only, so a miss may just mean superseded.
     $installed = @()
     $installed += @(Get-HotFix -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.HotFixID })
     $installed += @(Get-ChildItem -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall' -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.PSChildName })
-    $patches = @(
-        @{ Id = 'KB958644';  Name = 'MS08-067, SMB worm flaw (Conficker)'; Level = 'Risk' },
-        @{ Id = 'KB4012598'; Name = 'MS17-010, SMBv1 (WannaCry)'; Level = 'Risk' },
-        @{ Id = 'KB4500331'; Name = 'Remote Desktop, BlueKeep'; Level = 'Risk' },
-        @{ Id = 'KB967715';  Name = 'AutoRun fix that makes NoDriveTypeAutoRun fully work'; Level = 'Warn' }
-    )
-    foreach ($p in $patches) {
-        $id = $p.Id
-        $hit = @($installed | Where-Object { $_ -like ($id + '*') })
-        if ($hit.Length -gt 0) {
-            $findings += New-Finding -Area 'Patches' -Level 'OK' -Message ('{0} installed ({1}).' -f $id, $p.Name)
-        } else {
-            $findings += New-Finding -Area 'Patches' -Level $p.Level -Message ('{0} missing ({1}).' -f $id, $p.Name) -Fix 'Legacy Update, or download it from the Microsoft Update Catalog'
-        }
+    $autorunFix = @($installed | Where-Object { $_ -like 'KB967715*' })
+    if ($autorunFix.Length -gt 0) {
+        $findings += New-Finding -Area 'Patches' -Level 'OK' -Message 'KB967715 installed (AutoRun fix that makes NoDriveTypeAutoRun fully work).'
+    } else {
+        $findings += New-Finding -Area 'Patches' -Level 'Info' -Message 'KB967715 (AutoRun fix) not found by KB number; it may be superseded. Legacy Update will offer it if needed.'
     }
 
     Write-Section 'Listening TCP ports (network-facing)'

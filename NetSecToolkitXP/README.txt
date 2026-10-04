@@ -1,4 +1,4 @@
-NetSecToolkitXP 0.2.0
+NetSecToolkitXP 0.2.1
 =====================
 Windows XP SP3 / PowerShell 2.0 test build of NetSecToolkit.
 Everything is read-only except Set-XPHardening, which applies the
@@ -71,10 +71,14 @@ Set-XPHardening          Applies the XP hardening baseline in one run:
                            -Skip Server,SmbDevice,NetBIOS,FileAndPrint
 
 Get-XPHardeningStatus    Read-only check of everything above, plus the
-                         wormable-flaw patches (KB958644 Conficker,
-                         KB4012598 WannaCry, KB4500331 BlueKeep), the AutoRun
-                         fix KB967715, and which TCP ports are listening on
-                         the network. Ends with a risk/warning count.
+                         wormable-flaw fixes, checked by file version so
+                         later superseding updates count:
+                           Conficker  netapi32.dll >= 5.1.2600.5694
+                           WannaCry   srv.sys      >= 5.1.2600.7208
+                           BlueKeep   termdd.sys   >= 5.1.2600.7701
+                         the AutoRun fix KB967715, and which TCP ports are
+                         listening on the network. Ends with a risk/warning
+                         count.
 
 All commands accept -PassThru to return objects as well as the report.
 Get-Help <command> -Full shows the built-in help.
