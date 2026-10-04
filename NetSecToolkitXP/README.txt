@@ -91,7 +91,8 @@ Hardening a fresh XP machine
   Set-XPHardening
   Restart-Computer
   Get-XPHardeningStatus          # after: target is only 135 listening
-Then run Legacy Update and re-check the patches.
+Then run Legacy Update and re-check the patches. The BlueKeep fix
+(KB4500331) is only on the Microsoft Update Catalog, not Windows Update.
 
 What this does NOT cover: patches (use Legacy Update / the Update Catalog),
 the Administrator password, a non-admin daily account, and phishing.
@@ -120,10 +121,11 @@ Differences from NetSecToolkit (PowerShell 7)
 
 Known limits / not yet verified on real XP
 ------------------------------------------
-- Built and checked in PowerShell 7 with mocked WMI/COM/ARP/netsh data
-  and a scan for PS 3.0+ syntax. The hardening steps match commands run
-  by hand on a real XP SP3 laptop (Dell Inspiron 1521); the module itself
-  still needs its first real run there.
+- Checked in PowerShell 7 with mocked WMI/COM/ARP/netsh data and a scan
+  for PS 3.0+ syntax. Get-XPHardeningStatus has run on a real XP Pro SP3
+  VM (VMware Workstation, PowerShell 2.0). Set-XPHardening has not had
+  its first real run yet; its steps match commands run by hand on a real
+  XP SP3 laptop (Dell Inspiron 1521).
 - Remote Desktop / Remote Admin exceptions don't exist on XP Home; those
   steps report Failed there. Re-run with -Skip RemoteDesktop,RemoteAdmin.
 - Firewall logging is read from
