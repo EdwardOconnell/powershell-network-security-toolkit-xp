@@ -181,6 +181,9 @@ These steps were first done by hand on an XP SP3 laptop, then collected into `Se
 
 Tested with 0.2.2 on Windows XP Professional SP3 in VMware Workstation (PowerShell 2.0, fully updated through Legacy Update plus KB4500331), starting from a pre-hardening snapshot:
 
+![Test environment: Windows XP Professional SP3 (5.1.2600), PowerShell 2.0, NetSecToolkitXP 0.2.2](docs/images/environment.png)
+
+
 | | Before | After `Set-XPHardening` + reboot |
 |---|---|---|
 | `Get-XPHardeningStatus` | 0 risks, 12 warnings | **0 risks, 0 warnings** |
