@@ -1,0 +1,155 @@
+NetSecToolkitXP 0.2.2
+=====================
+Windows XP SP3 / PowerShell 2.0 test build of NetSecToolkit.
+Everything is read-only except Set-XPHardening, which applies the
+hardening baseline (use -WhatIf first to preview it).
+
+Requirements
+------------
+- Windows XP SP3
+- .NET Framework 2.0 SP1 or later
+- Windows PowerShell 2.0 (KB968930)
+
+Install
+-------
+1. Copy the NetSecToolkitXP folder to the XP machine, e.g.
+   C:\Documents and Settings\<you>\My Documents\WindowsPowerShell\Modules\NetSecToolkitXP
+   (create the WindowsPowerShell\Modules folders if they don't exist).
+2. If you downloaded the zip in a browser on XP, right-click each file,
+   choose Properties, and click Unblock (PS 2.0 has no Unblock-File).
+3. Allow local scripts (once):
+     Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+   or just for one session:
+     powershell -ExecutionPolicy Bypass
+4. Import:
+     Import-Module NetSecToolkitXP
+   or by path, from anywhere:
+     Import-Module C:\path\to\NetSecToolkitXP\NetSecToolkitXP.psd1
+
+Commands
+--------
+Get-NetAdapterHealthXP   Adapters from WMI: IP, mask, gateway, DNS, DHCP
+                         lease, NetBIOS over TCP/IP. Flags APIPA, missing
+                         gateway/DNS, NetBIOS on. Pings gateway and 8.8.8.8,
+                         tests DNS.
+
+Get-FirewallAuditXP      Windows Firewall via the HNetCfg.FwMgr COM API:
+                         SharedAccess service, Domain and Standard profiles,
+                         File and Printer Sharing / UPnP / Remote Desktop /
+                         Remote Admin exceptions, ICMP, program exceptions
+                         (flags ones pointing to deleted files), open ports
+                         (flags risky ones), logging (from netsh firewall
+                         show logging).
+                         -ExportPath file.csv   save the exception list
+
+Find-NetworkDeviceXP     Ping sweep of the local subnet, then reads arp -a.
+                         Shows IP, MAC, gateway/this PC, ping response,
+                         randomized MACs.
+                         -TimeoutMs 200         per-host ping timeout
+                         -NoSweep               only read the ARP cache
+                         -ResolveNames          look up hostnames (slower)
+                         -ExportPath file.csv   save the device list
+
+Set-XPHardening          Applies the XP hardening baseline in one run:
+                         - Firewall on, exceptions disabled (all profiles)
+                         - Firewall logging on (dropped packets and
+                           connections, %windir%\pfirewall.log)
+                         - Closes File and Printer Sharing, Remote Desktop,
+                           Remote Admin and UPnP firewall exceptions
+                         - Remote Assistance off (fAllowToGetHelp = 0)
+                         - Stops and disables MSMQ, UPnP Device Host, SSDP,
+                           Simple TCP/IP Services, Server + Computer Browser,
+                           Remote Registry, Messenger, Telnet
+                         - SMBDeviceEnabled = 0 (closes 445 after reboot)
+                         - NetBIOS over TCP/IP off on all IP adapters
+                         - Guest account disabled
+                         - AutoRun off (NoDriveTypeAutoRun = 0xFF)
+                         Needs an Administrator PowerShell window.
+                         -WhatIf                preview, change nothing
+                         -Confirm               ask before each step
+                         -Skip Name,Name        leave steps alone. Names:
+                           Firewall Logging FileAndPrint RemoteDesktop
+                           RemoteAdmin UPnPException RemoteAssistance MSMQ
+                           UPnP SimpleTcp Server SmbDevice NetBIOS
+                           RemoteRegistry Messenger Telnet Guest AutoRun
+                         Keep file sharing working:
+                           -Skip Server,SmbDevice,NetBIOS,FileAndPrint
+
+Get-XPHardeningStatus    Read-only check of everything above, plus the
+                         wormable-flaw fixes, checked by file version so
+                         later superseding updates count:
+                           Conficker  netapi32.dll >= 5.1.2600.5694
+                           WannaCry   srv.sys      >= 5.1.2600.7208
+                           BlueKeep   termdd.sys   >= 5.1.2600.7701
+                         the AutoRun fix KB967715, and which TCP ports are
+                         listening on the network. Ends with a risk/warning
+                         count.
+
+All commands accept -PassThru to return objects as well as the report.
+Get-Help <command> -Full shows the built-in help.
+
+Hardening a fresh XP machine
+----------------------------
+  Import-Module C:\path\to\NetSecToolkitXP\NetSecToolkitXP.psd1
+  Get-XPHardeningStatus          # before
+  Set-XPHardening -WhatIf        # preview
+  Set-XPHardening
+  Restart-Computer
+  Get-XPHardeningStatus          # after: target is only 135 listening
+Then run Legacy Update and re-check the patches. The BlueKeep fix
+(KB4500331) is only on the Microsoft Update Catalog, not Windows Update.
+
+What this does NOT cover: patches (use Legacy Update / the Update Catalog),
+the Administrator password, a non-admin daily account, and phishing.
+Side effects: this PC can no longer share files/printers, open other PCs'
+shares (\\PC\share), accept Remote Desktop, or host LAN games. Browsing,
+downloads and Windows Update are unaffected (outbound traffic).
+
+Examples
+--------
+  Get-NetAdapterHealthXP
+  Get-FirewallAuditXP -ExportPath C:\fw-exceptions.csv
+  Find-NetworkDeviceXP -ResolveNames -ExportPath C:\devices.csv
+
+Differences from NetSecToolkit (PowerShell 7)
+---------------------------------------------
+- WMI and COM instead of the Net* cmdlets (Windows 8+ only).
+- netsh firewall instead of advfirewall; the XP firewall has no
+  per-rule inbound/outbound model, only exceptions.
+- Sweep runs one host at a time (no -Parallel in PS 2.0); a /24 takes
+  under a minute at the default timeout. Subnets larger than /22 are
+  capped to the local /24.
+- No router exposure, speed test or Wi-Fi commands yet. Set-XPHardening
+  covers what Set-FirewallBaseline does on the PS7 module, and more.
+- Settings on the Domain profile are reported as Info unless the PC is
+  actually on a domain network.
+
+Testing and known limits
+------------------------
+- Verified on a real XP Pro SP3 VM (VMware Workstation, PowerShell 2.0)
+  with 0.2.2: all five commands ran without errors. Set-XPHardening
+  applied 16 steps with 0 failures (2 N/A), and after a reboot
+  Get-XPHardeningStatus went from 12 warnings to 0 risks, 0 warnings,
+  with only port 135 listening. Also checked in PowerShell 7 with mocked
+  data and a scan for PS 3.0+ syntax. Not yet run on the physical XP
+  laptop (Dell Inspiron 1521), where the same steps were first done by
+  hand.
+- Remote Desktop / Remote Admin exceptions don't exist on XP Home; those
+  steps report Failed there. Re-run with -Skip RemoteDesktop,RemoteAdmin.
+- Firewall logging is one setting for all profiles on XP, read from
+  netsh firewall show logging.
+- netsh and arp -a parsing expects English-language XP output.
+- DHCP lease time uses System.Management; if it shows blank, ipconfig /all
+  has it.
+
+Changes
+-------
+0.2.2  Set-XPHardening also turns on firewall logging and turns off
+       Remote Assistance. Firewall logging is now read from netsh (the
+       registry check was wrong). Tables fit the console window.
+       Find-NetworkDeviceXP re-pings hosts whose ARP entry expired during
+       the sweep, so the gateway MAC is no longer blank.
+0.2.1  Wormable-flaw patch checks compare file versions instead of KB
+       numbers, so superseding updates count.
+0.2.0  Added Set-XPHardening and Get-XPHardeningStatus.
+0.1.0  Get-NetAdapterHealthXP, Get-FirewallAuditXP, Find-NetworkDeviceXP.

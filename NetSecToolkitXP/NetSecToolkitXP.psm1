@@ -52,10 +52,44 @@ function New-Finding {
         Select-Object Area, Level, Message, Fix
 }
 
+function Get-ConsoleWidth {
+    $width = 120
+    try {
+        $w = $Host.UI.RawUI.BufferSize.Width
+        if ($w -gt 40) { $width = $w - 1 }
+    } catch { }
+    return $width
+}
+
 function Write-TableToHost {
-    param($InputRows)
-    if (@($InputRows).Length -gt 0) {
-        $InputRows | Format-Table -AutoSize | Out-String -Width 160 | Write-Host
+    # Fits tables to the console width. With -Columns (Format-Table hashtables
+    # with fixed Width), long text wraps inside its column instead of breaking
+    # whole rows across lines.
+    param($InputRows, [object[]]$Columns)
+    if (@($InputRows).Length -eq 0) { return }
+    $width = Get-ConsoleWidth
+    if ($Columns) {
+        $InputRows | Format-Table -Property $Columns -Wrap | Out-String -Width $width | Write-Host
+    } else {
+        $InputRows | Format-Table -AutoSize | Out-String -Width $width | Write-Host
+    }
+}
+
+function Get-FirewallLogging {
+    # Parses `netsh firewall show logging` (English XP output). XP keeps one
+    # firewall log for all profiles. Returns $null if the output is unreadable.
+    $info = @{}
+    foreach ($line in @(& netsh.exe firewall show logging 2>&1)) {
+        if ([string]$line -match '^\s*(File location|Max file size|Dropped packets|Connections)\s*=\s*(.+?)\s*$') {
+            $info[$matches[1]] = $matches[2]
+        }
+    }
+    if ($info.Count -eq 0) { return $null }
+    New-Object PSObject -Property @{
+        Path           = $info['File location']
+        MaxSize        = $info['Max file size']
+        DroppedPackets = ($info['Dropped packets'] -eq 'Enable')
+        Connections    = ($info['Connections'] -eq 'Enable')
     }
 }
 
@@ -490,26 +524,19 @@ function Get-FirewallAuditXP {
                 }
             }
         }
+    }
 
-        # Logging lives in the registry on XP. Missing values mean "off".
-        $logKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\{0}\Logging' -f $p.RegKey
-        $log = Get-ItemProperty -Path $logKey -ErrorAction SilentlyContinue
-        $dropped = $false
-        $allowed = $false
-        if ($log) {
-            $dropped = ($log.LogDroppedPackets -eq 1)
-            $allowed = ($log.LogSuccessfulConnections -eq 1)
+    Write-Section 'Logging (all profiles)'
+    $fwLog = Get-FirewallLogging
+    if (-not $fwLog) {
+        $findings += New-Finding -Area 'Logging' -Level 'Info' -Message 'Could not read netsh firewall show logging.'
+    } elseif ($fwLog.DroppedPackets) {
+        $findings += New-Finding -Area 'Logging' -Level 'OK' -Message ('Dropped-packet logging is on ({0}, max {1}).' -f $fwLog.Path, $fwLog.MaxSize)
+        if (-not $fwLog.Connections) {
+            $findings += New-Finding -Area 'Logging' -Level 'Info' -Message 'Successful-connection logging is off.'
         }
-        if ($dropped) {
-            $path = '%windir%\pfirewall.log'
-            if ($log.LogFilePath) { $path = $log.LogFilePath }
-            $findings += New-Finding -Area $p.Name -Level (Limit-Level 'OK' $inactiveDomain) -Message ('Dropped-packet logging is on ({0}).' -f $path)
-        } else {
-            $findings += New-Finding -Area $p.Name -Level (Limit-Level 'Warn' $inactiveDomain) -Message 'Dropped-packet logging is off.' -Fix 'netsh firewall set logging droppedpackets=ENABLE connections=ENABLE'
-        }
-        if ($dropped -and -not $allowed) {
-            $findings += New-Finding -Area $p.Name -Level (Limit-Level 'Info' $inactiveDomain) -Message 'Successful-connection logging is off.'
-        }
+    } else {
+        $findings += New-Finding -Area 'Logging' -Level 'Warn' -Message 'Dropped-packet logging is off.' -Fix 'netsh firewall set logging droppedpackets=ENABLE connections=ENABLE'
     }
 
     $exceptions = @($exceptions | Select-Object Profile, Kind, Name, Detail, Enabled, Scope)
@@ -517,7 +544,15 @@ function Get-FirewallAuditXP {
     if ($exceptions.Length -eq 0) {
         Write-Host '  (none)'
     } else {
-        Write-TableToHost $exceptions
+        $cols = @(
+            @{ Label = 'Profile'; Expression = { $_.Profile }; Width = 8 },
+            @{ Label = 'Kind';    Expression = { $_.Kind };    Width = 7 },
+            @{ Label = 'Enabled'; Expression = { $_.Enabled }; Width = 7 },
+            @{ Label = 'Scope';   Expression = { $_.Scope };   Width = 12 },
+            @{ Label = 'Name';    Expression = { $_.Name };    Width = 36 },
+            @{ Label = 'Detail';  Expression = { $_.Detail } }
+        )
+        Write-TableToHost -InputRows $exceptions -Columns $cols
     }
 
     if ($ExportPath) {
@@ -613,6 +648,18 @@ function Find-NetworkDeviceXP {
 
     $byIp = @{}
     foreach ($entry in $arp) { $byIp[$entry.IPAddress] = $entry.MAC }
+
+    # XP can age ARP entries out within a minute, so hosts pinged early in the
+    # sweep may be gone from the cache by the end. Ping those again and re-read.
+    $missing = @($responders.Keys | Where-Object { -not $byIp.ContainsKey($_) })
+    if ($missing.Length -gt 0) {
+        foreach ($ip in $missing) { $null = Test-Ping -Address $ip -TimeoutMs 1000 }
+        foreach ($entry in @(ConvertFrom-ArpTable -Text (arp -a))) {
+            if (($entry.Interface -eq $primary.IPv4) -and ($missing -contains $entry.IPAddress)) {
+                $byIp[$entry.IPAddress] = $entry.MAC
+            }
+        }
+    }
     foreach ($ip in $responders.Keys) { if (-not $byIp.ContainsKey($ip)) { $byIp[$ip] = '' } }
 
     $selfMac = ''
@@ -734,8 +781,9 @@ function Set-XPHardening {
 .SYNOPSIS
     Applies the XP hardening baseline in one run.
 .DESCRIPTION
-    Turns on Windows Firewall with no exceptions, closes the File and Printer
-    Sharing / Remote Desktop / Remote Admin / UPnP exceptions, disables
+    Turns on Windows Firewall with no exceptions and logging, closes the File
+    and Printer Sharing / Remote Desktop / Remote Admin / UPnP exceptions,
+    turns off Remote Assistance, disables
     MSMQ, UPnP, Simple TCP/IP Services, the Server service, Remote Registry,
     Messenger and Telnet, turns off SMB over port 445 and NetBIOS over
     TCP/IP, disables the Guest account and turns off AutoRun.
@@ -755,7 +803,7 @@ function Set-XPHardening {
 #>
     [CmdletBinding(SupportsShouldProcess = $true)]
     param(
-        [ValidateSet('Firewall', 'FileAndPrint', 'RemoteDesktop', 'RemoteAdmin', 'UPnPException',
+        [ValidateSet('Firewall', 'Logging', 'FileAndPrint', 'RemoteDesktop', 'RemoteAdmin', 'UPnPException', 'RemoteAssistance',
                      'MSMQ', 'UPnP', 'SimpleTcp', 'Server', 'SmbDevice', 'NetBIOS',
                      'RemoteRegistry', 'Messenger', 'Telnet', 'Guest', 'AutoRun')]
         [string[]]$Skip = @(),
@@ -770,6 +818,9 @@ function Set-XPHardening {
         @{ Name = 'Firewall'; Reboot = $false
            Action = 'Turn on Windows Firewall with exceptions disabled (all profiles)'
            Run = { Invoke-NetshFirewall @('set', 'opmode', 'mode=ENABLE', 'exceptions=DISABLE', 'profile=ALL'); 'On, no exceptions' } },
+        @{ Name = 'Logging'; Reboot = $false
+           Action = 'Log dropped packets and successful connections to pfirewall.log'
+           Run = { Invoke-NetshFirewall @('set', 'logging', 'droppedpackets=ENABLE', 'connections=ENABLE'); 'Logging to pfirewall.log' } },
         @{ Name = 'FileAndPrint'; Reboot = $false
            Action = 'Close the File and Printer Sharing firewall exception'
            Run = { Invoke-NetshFirewall @('set', 'service', 'type=FILEANDPRINT', 'mode=DISABLE', 'profile=ALL'); 'Exception closed' } },
@@ -782,6 +833,9 @@ function Set-XPHardening {
         @{ Name = 'UPnPException'; Reboot = $false
            Action = 'Close the UPnP Framework firewall exception'
            Run = { Invoke-NetshFirewall @('set', 'service', 'type=UPNP', 'mode=DISABLE', 'profile=ALL'); 'Exception closed' } },
+        @{ Name = 'RemoteAssistance'; Reboot = $false
+           Action = 'Turn off Remote Assistance (fAllowToGetHelp = 0)'
+           Run = { Set-RegistryDword -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name 'fAllowToGetHelp' -Value 0; 'Remote Assistance off' } },
         @{ Name = 'MSMQ'; Reboot = $false
            Action = 'Stop and disable Message Queuing (ports 1801, 2103-2107, 3527)'
            Run = { Disable-XPService @('MSMQ') } },
@@ -855,7 +909,7 @@ function Set-XPHardening {
             if ($WhatIfPreference) { $status = 'WhatIf' } else { $status = 'Declined' }
             $detail = $s.Action
         }
-        Write-Host ('  [{0,-8}] {1,-14} {2}' -f $status, $s.Name, $detail) -ForegroundColor $colors[$status]
+        Write-Host ('  [{0,-8}] {1,-16} {2}' -f $status, $s.Name, $detail) -ForegroundColor $colors[$status]
         $results += New-Object PSObject -Property @{ Step = $s.Name; Status = $status; Detail = $detail }
     }
 
@@ -926,6 +980,15 @@ function Get-XPHardeningStatus {
         $findings += New-Finding -Area 'Firewall' -Level 'Risk' -Message ('Could not read firewall policy: ' + $_.Exception.Message)
     }
 
+    $fwLog = Get-FirewallLogging
+    if ($fwLog -and $fwLog.DroppedPackets) {
+        $findings += New-Finding -Area 'Firewall' -Level 'OK' -Message 'Dropped-packet logging is on.'
+    } elseif ($fwLog) {
+        $findings += New-Finding -Area 'Firewall' -Level 'Warn' -Message 'Dropped-packet logging is off.' -Fix $fixCmd
+    } else {
+        $findings += New-Finding -Area 'Firewall' -Level 'Info' -Message 'Could not read firewall logging settings.'
+    }
+
     Write-Section 'Services'
     foreach ($n in @('MSMQ', 'upnphost', 'SSDPSRV', 'SimpTcp', 'lanmanserver', 'RemoteRegistry', 'Messenger', 'TlntSvr')) {
         $w = Get-WmiObject -Class Win32_Service -Filter ("Name = '{0}'" -f $n) -ErrorAction SilentlyContinue
@@ -938,7 +1001,7 @@ function Get-XPHardeningStatus {
         }
     }
 
-    Write-Section 'SMB, NetBIOS, accounts, AutoRun'
+    Write-Section 'SMB, NetBIOS, accounts, Remote Assistance, AutoRun'
     $netbt = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters' -ErrorAction SilentlyContinue
     $smbOff = ($netbt -and ($netbt.SMBDeviceEnabled -ne $null) -and ($netbt.SMBDeviceEnabled -eq 0))
     if ($smbOff) {
@@ -963,6 +1026,13 @@ function Get-XPHardeningStatus {
         $findings += New-Finding -Area 'Accounts' -Level 'OK' -Message 'Guest account is disabled.'
     } else {
         $findings += New-Finding -Area 'Accounts' -Level 'Warn' -Message 'Guest account is enabled.' -Fix $fixCmd
+    }
+
+    $ts = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -ErrorAction SilentlyContinue
+    if ($ts -and ($ts.fAllowToGetHelp -ne $null) -and ($ts.fAllowToGetHelp -eq 0)) {
+        $findings += New-Finding -Area 'Remote' -Level 'OK' -Message 'Remote Assistance is off.'
+    } else {
+        $findings += New-Finding -Area 'Remote' -Level 'Warn' -Message 'Remote Assistance is on.' -Fix $fixCmd
     }
 
     $explorer = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -ErrorAction SilentlyContinue

@@ -74,6 +74,8 @@ Get-FirewallAuditXP -ExportPath C:\fw-exceptions.csv   # also save the exception
 
 Findings on the Domain profile are reported as Info unless the PC is actually on a domain network.
 
+![Get-FirewallAuditXP on the hardened XP VM](docs/images/firewall-audit.png)
+
 ### `Find-NetworkDeviceXP`
 
 Finds devices on the local subnet. It pings every address (one at a time; a /24 takes under a minute), then reads the ARP table, so devices that block ping still show up.
@@ -87,6 +89,8 @@ Find-NetworkDeviceXP -ExportPath C:\devices.csv         # also save the list
 ```
 
 Output columns: IP, MAC, role (gateway / this PC), whether it answered ping, latency, and whether the MAC is randomized (common on phones). Subnets larger than /22 are capped to the local /24.
+
+![Find-NetworkDeviceXP on VMware's NAT network: gateway, host adapter and DHCP server found](docs/images/device-scan.png)
 
 ### `Get-XPHardeningStatus`
 
@@ -186,7 +190,17 @@ Tested with 0.2.2 on Windows XP Professional SP3 in VMware Workstation (PowerShe
 
 `Set-XPHardening` reported 16 steps Applied, 2 N/A (MSMQ and Simple TCP/IP Services weren't installed on the VM) and 0 Failed. All five commands ran without errors, including the 0.2.2 fixes: the firewall audit reads logging correctly and its tables fit the console, and `Find-NetworkDeviceXP` reports the gateway's MAC.
 
-<!-- Add before/after screenshots of Get-XPHardeningStatus here -->
+**Before:** `Get-XPHardeningStatus` on the unhardened VM, 0 risks and 12 warnings.
+
+![Get-XPHardeningStatus before hardening: 0 risks, 12 warnings](docs/images/status-before.png)
+
+**Hardening:** `Set-XPHardening`, 16 steps Applied, 2 N/A, 0 Failed.
+
+![Set-XPHardening step report](docs/images/hardening-run.png)
+
+**After the reboot:** 0 risks, 0 warnings, only port 135 listening.
+
+![Get-XPHardeningStatus after hardening: 0 risks, 0 warnings](docs/images/status-after.png)
 
 ## External verification
 
@@ -212,6 +226,8 @@ ping $xp
 
 Port 135 is the key result: XP is still listening on it, so the block comes from the firewall, not from the service being off.
 
+![Port probe and ping from the Windows 11 host: every port False, 100% ping loss](docs/images/probe-from-host.png)
+
 An all-blocked result would look the same if the VM were simply unreachable, so the XP firewall log (`C:\WINDOWS\pfirewall.log`, enabled by the `Logging` step) was checked to confirm the probes arrived and were dropped:
 
 ```
@@ -227,6 +243,8 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 - `DROP ICMP ... 8 0`: a dropped ping (ICMP type 8, code 0 is an echo request).
 - `CLOSE UDP ... 53`: the VM's own outbound DNS lookup completing normally, showing outbound traffic still works and is logged.
 
+![pfirewall.log showing the dropped probes](docs/images/firewall-log.png)
+
 <!-- Control test: revert to the pre-hardening snapshot and run the same probe; add the before/after results here -->
 
 ## Testing
@@ -234,6 +252,10 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 - Parsed with the PowerShell language parser, plus a scan for PowerShell 3.0+ syntax: `[pscustomobject]`, `[ordered]`, `-in`, simplified `Where-Object`, `-Parallel`, PS3+ parameters.
 - Every command exercised in PowerShell 7 against mocked WMI, COM, `netsh`, ARP and registry data, including the `-WhatIf`, `-Skip`, failed-step and already-applied paths.
 - Real runs on an XP Professional SP3 VM: see [Verified on an XP VM](#verified-on-an-xp-vm) and [External verification](#external-verification). Each round of VM testing found real bugs that mocks missed: a false positive in the original KB-number patch check (fixed in 0.2.1), and a wrong logging check, a missing gateway MAC and wrapped tables (fixed in 0.2.2).
+
+  The very first real run (0.2.0) reported three wormable-flaw patches as missing on a fully patched VM. Later POSReady updates had replaced the original KBs, so the check now compares file versions instead:
+
+  ![First real run of 0.2.0: three false-positive patch risks](docs/images/first-run-false-positives.png)
 - Files are pure ASCII with CRLF line endings, so PS 2.0 reads them correctly and they open cleanly in XP's Notepad.
 - Recommended: test in an XP SP3 VM using **NAT or Host-only networking** (never Bridged), with a snapshot taken before running `Set-XPHardening`.
 
