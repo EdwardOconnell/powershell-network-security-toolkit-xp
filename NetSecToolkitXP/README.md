@@ -188,11 +188,52 @@ Tested with 0.2.2 on Windows XP Professional SP3 in VMware Workstation (PowerShe
 
 <!-- Add before/after screenshots of Get-XPHardeningStatus here -->
 
+## External verification
+
+`Get-XPHardeningStatus` checks the VM from the inside. To confirm the firewall actually blocks traffic, the hardened VM was also probed from the Windows 11 host over VMware's NAT network (host `192.168.107.1`, VM `192.168.107.128`), using PowerShell 7:
+
+```powershell
+$xp = '192.168.107.128'
+135,139,445,3389,2869,5985,80 | ForEach-Object {
+    [pscustomobject]@{ Port = $_; Open = (Test-Connection $xp -TcpPort $_ -TimeoutSeconds 2) }
+}
+ping $xp
+```
+
+| Port | Service | Reachable from the host |
+|---|---|---|
+| 135 | RPC (still listening on the VM) | No |
+| 139 | NetBIOS session | No |
+| 445 | SMB | No |
+| 3389 | Remote Desktop | No |
+| 2869 | UPnP | No |
+| 5985, 80 | Windows Remote Management | No |
+| ICMP | Ping | No (100% loss) |
+
+Port 135 is the key result: XP is still listening on it, so the block comes from the firewall, not from the service being off.
+
+An all-blocked result would look the same if the VM were simply unreachable, so the XP firewall log (`C:\WINDOWS\pfirewall.log`, enabled by the `Logging` step) was checked to confirm the probes arrived and were dropped:
+
+```
+2026-10-04 17:47:03 DROP TCP 192.168.107.1 192.168.107.128 54130 135 52 S 2738703890 0 65535 - - - RECEIVE
+2026-10-04 17:47:05 DROP TCP 192.168.107.1 192.168.107.128 54133 139 52 S 1925047705 0 65535 - - - RECEIVE
+2026-10-04 17:47:07 DROP TCP 192.168.107.1 192.168.107.128 54137 445 52 S 2457819011 0 65535 - - - RECEIVE
+2026-10-04 17:47:09 DROP TCP 192.168.107.1 192.168.107.128 55191 3389 52 S 3013061225 0 65535 - - - RECEIVE
+2026-10-04 17:47:17 DROP ICMP 192.168.107.1 192.168.107.128 - - 60 - - - - 8 0 - RECEIVE
+2026-10-04 17:47:38 CLOSE UDP 192.168.107.128 192.168.107.2 64133 53 - - - - - - - - -
+```
+
+- `DROP TCP ... S`: a dropped connection attempt (`S` is the TCP SYN flag). Each port appears twice in the full log because the host retried once.
+- `DROP ICMP ... 8 0`: a dropped ping (ICMP type 8, code 0 is an echo request).
+- `CLOSE UDP ... 53`: the VM's own outbound DNS lookup completing normally, showing outbound traffic still works and is logged.
+
+<!-- Control test: revert to the pre-hardening snapshot and run the same probe; add the before/after results here -->
+
 ## Testing
 
 - Parsed with the PowerShell language parser, plus a scan for PowerShell 3.0+ syntax: `[pscustomobject]`, `[ordered]`, `-in`, simplified `Where-Object`, `-Parallel`, PS3+ parameters.
 - Every command exercised in PowerShell 7 against mocked WMI, COM, `netsh`, ARP and registry data, including the `-WhatIf`, `-Skip`, failed-step and already-applied paths.
-- Real runs on an XP Professional SP3 VM: see [Verified on an XP VM](#verified-on-an-xp-vm). Each round of VM testing found real bugs that mocks missed: a false positive in the original KB-number patch check (fixed in 0.2.1), and a wrong logging check, a missing gateway MAC and wrapped tables (fixed in 0.2.2).
+- Real runs on an XP Professional SP3 VM: see [Verified on an XP VM](#verified-on-an-xp-vm) and [External verification](#external-verification). Each round of VM testing found real bugs that mocks missed: a false positive in the original KB-number patch check (fixed in 0.2.1), and a wrong logging check, a missing gateway MAC and wrapped tables (fixed in 0.2.2).
 - Files are pure ASCII with CRLF line endings, so PS 2.0 reads them correctly and they open cleanly in XP's Notepad.
 - Recommended: test in an XP SP3 VM using **NAT or Host-only networking** (never Bridged), with a snapshot taken before running `Set-XPHardening`.
 
