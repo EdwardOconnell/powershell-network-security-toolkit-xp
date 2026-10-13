@@ -1,6 +1,6 @@
 # NetSecToolkitXP
 
-![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.2.2](https://img.shields.io/badge/version-0.2.2-lightgrey)
+![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.2.3](https://img.shields.io/badge/version-0.2.3-lightgrey)
 
 The Windows XP SP3 / PowerShell 2.0 edition of my [PowerShell Network Security Toolkit](https://github.com/EdwardOconnell/powershell-network-security-toolkit).
 
@@ -111,6 +111,8 @@ Set-XPHardening -Confirm                                 # ask before each step
 Set-XPHardening -Skip Server,SmbDevice,NetBIOS,FileAndPrint   # keep file sharing
 ```
 
+It only applies changes on 32-bit Windows XP (version 5.1). On anything else, including XP x64 and Server 2003, it stops with a message; `-WhatIf` still previews, and `-Force` applies anyway at your own risk.
+
 ## Hardening a machine
 
 Run these in an **Administrator** PowerShell window:
@@ -137,10 +139,10 @@ Then run Legacy Update and check the patches again with `Get-XPHardeningStatus`.
 | `SimpleTcp` | Simple TCP/IP Services stopped and disabled | 7, 9, 13, 17, 19 |
 | `Server` | Server and Computer Browser stopped and disabled | File sharing |
 | `SmbDevice` | `SMBDeviceEnabled = 0` (applies after a reboot) | 445 |
-| `NetBIOS` | NetBIOS over TCP/IP off on every IP adapter | 137-139 |
-| `RemoteAssistance` | Remote Assistance off (`fAllowToGetHelp = 0`) | |
+| `NetBIOS` | NetBIOS over TCP/IP off on every network interface, including disabled or unplugged adapters | 137-139 |
+| `RemoteAssistance` | Remote Assistance off (`fAllowToGetHelp = 0`) and its `sessmgr.exe` firewall exception disabled | |
 | `RemoteRegistry`, `Messenger`, `Telnet` | Stopped and disabled | |
-| `Guest` | Guest account disabled | |
+| `Guest` | Built-in Guest account disabled, found by its SID so a renamed Guest is covered | |
 | `AutoRun` | `NoDriveTypeAutoRun = 0xFF` | |
 
 Each step reports **Applied**, **N/A** (not installed), **Skipped** or **Failed**, and a failed step doesn't stop the rest.
@@ -255,6 +257,7 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 - Parsed with the PowerShell language parser, plus a scan for PowerShell 3.0+ syntax: `[pscustomobject]`, `[ordered]`, `-in`, simplified `Where-Object`, `-Parallel`, PS3+ parameters.
 - Every command exercised in PowerShell 7 against mocked WMI, COM, `netsh`, ARP and registry data, including the `-WhatIf`, `-Skip`, failed-step and already-applied paths.
 - Real runs on an XP Professional SP3 VM: see [Verified on an XP VM](#verified-on-an-xp-vm) and [External verification](#external-verification). Each round of VM testing found real bugs that mocks missed: a false positive in the original KB-number patch check (fixed in 0.2.1), and a wrong logging check, a missing gateway MAC and wrapped tables (fixed in 0.2.2).
+- **0.2.3 came from a code review**, and each fix was checked against mocks that reproduce the bug on 0.2.2 first. Those fixes have not had their XP VM run yet; the VM results above are from 0.2.2.
 
   The very first real run (0.2.0) reported three wormable-flaw patches as missing on a fully patched VM. Later POSReady updates had replaced the original KBs, so the check now compares file versions instead:
 
@@ -264,7 +267,8 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 
 ## Known limits
 
-- Built for **XP SP3**. Remote Desktop and Remote Admin exceptions don't exist on XP Home, so those steps report Failed there. Use `-Skip RemoteDesktop,RemoteAdmin`.
+- Built for **32-bit XP SP3**. Remote Desktop and Remote Admin exceptions don't exist on XP Home, so those steps report Failed there. Use `-Skip RemoteDesktop,RemoteAdmin`.
+- **XP x64 and Server 2003** (version 5.2) are not supported: `Set-XPHardening` refuses without `-Force`, and `Get-XPHardeningStatus` skips the wormable-flaw checks there, because their file versions (5.2.3790.x) would always look newer than the XP fixes.
 - **Vista and 7 are not supported yet.** They use Windows Firewall with Advanced Security (`MpsSvc` and `netsh advfirewall`), different patch KB numbers, and a different SMB stack.
 - `netsh` and `arp -a` parsing expects English-language XP output.
 - Firewall logging is a single setting for all profiles on XP, read from `netsh firewall show logging`.
@@ -278,6 +282,12 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 
 ## Changelog
 
+- **0.2.3** (code review fixes):
+  - **XP x64 / Server 2003 reported as patched when they weren't.** Their 5.2.3790.x file versions always compared newer than the 32-bit XP fix versions, so an unpatched system showed all three wormable flaws as fixed. The patch check now only runs on 32-bit XP, and `Set-XPHardening` refuses other Windows versions unless `-Force` is given.
+  - **NetBIOS step reported Failed when Windows said "done, reboot required"** (WMI return code 1), and it skipped adapters that were disabled or not IP-enabled, which turned NetBIOS back on when re-enabled. It now sets every NetBT interface in the registry, and `Get-XPHardeningStatus` checks every interface.
+  - **A renamed Guest account was missed.** `Set-XPHardening` failed with "user name could not be found", and `Get-XPHardeningStatus` reported no Guest even while it was enabled. Both now find it by its SID (RID 501), which also works on non-English XP.
+  - **Remote Assistance's firewall exception stayed enabled** after the `RemoteAssistance` step. It is now disabled in both profiles, and `Get-XPHardeningStatus` reports it.
+  - `Get-XPHardeningStatus` also checks the Computer Browser service, which `Set-XPHardening` disables.
 - **0.2.2:** `Set-XPHardening` also turns on firewall logging and turns off Remote Assistance. Logging is now read from `netsh` (the old registry check reported logging off when it was on). Tables fit the console window. `Find-NetworkDeviceXP` re-pings hosts whose ARP entry expired during the sweep, so the gateway's MAC is no longer blank.
 - **0.2.1:** Wormable-flaw checks compare file versions instead of KB numbers, so superseding updates count.
 - **0.2.0:** Added `Set-XPHardening` and `Get-XPHardeningStatus`.

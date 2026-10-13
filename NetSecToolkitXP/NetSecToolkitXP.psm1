@@ -767,6 +767,61 @@ function Set-RegistryDword {
     }
 }
 
+function Get-NetbtInterface {
+    # One object per NetBT interface key (Tcpip_{GUID}), named from WMI where
+    # the adapter still exists. Covers disabled and unplugged adapters too,
+    # which Win32_NetworkAdapterConfiguration's IPEnabled filter leaves out.
+    $root = 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces'
+    $names = @{}
+    foreach ($c in @(Get-WmiObject -Class Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue)) {
+        if ($c.SettingID) { $names[[string]$c.SettingID.ToUpper()] = $c.Description }
+    }
+    foreach ($k in @(Get-ChildItem -Path $root -ErrorAction SilentlyContinue)) {
+        $leaf = [string]$k.PSChildName
+        if ($leaf -notlike 'Tcpip_*') { continue }
+        $guid = $leaf.Substring(6).ToUpper()
+        $desc = $names[$guid]
+        if (-not $desc) { $desc = 'Adapter ' + $guid }
+        $opt = (Get-ItemProperty -Path ($root + '\' + $leaf) -ErrorAction SilentlyContinue).NetbiosOptions
+        New-Object PSObject -Property @{ Path = ($root + '\' + $leaf); Description = $desc; NetbiosOptions = $opt }
+    }
+}
+
+function Get-GuestAccount {
+    # The built-in Guest account, found by its well-known RID (500 + 1) rather
+    # than by name, so it is found even when renamed or on non-English XP.
+    @(Get-WmiObject -Class Win32_UserAccount -Filter 'LocalAccount = TRUE' -ErrorAction SilentlyContinue |
+        Where-Object { [string]$_.SID -like 'S-1-5-21-*-501' }) | Select-Object -First 1
+}
+
+function Get-OSVersionInfo {
+    # Wrapped so the tests can stand in for XP.
+    return [Environment]::OSVersion.Version
+}
+
+function Test-IsXP32 {
+    # 32-bit Windows XP reports 5.1. XP x64 and Server 2003 report 5.2.
+    $v = Get-OSVersionInfo
+    return (($v.Major -eq 5) -and ($v.Minor -eq 1))
+}
+
+function Set-RemoteAssistanceException {
+    # Disables the Remote Assistance (sessmgr.exe) program exception in the
+    # Domain and Standard firewall profiles. Returns how many were changed.
+    $mgr = New-Object -ComObject HNetCfg.FwMgr
+    $changed = 0
+    foreach ($type in 0, 1) {
+        try { $prof = $mgr.LocalPolicy.GetProfileByType($type) } catch { continue }
+        foreach ($app in $prof.AuthorizedApplications) {
+            if (([string]$app.ProcessImageFileName -like '*\sessmgr.exe') -and $app.Enabled) {
+                $app.Enabled = $false
+                $changed++
+            }
+        }
+    }
+    return $changed
+}
+
 function Get-FileVersionObject {
     # Returns a [Version] built from a file's numeric version fields, or $null.
     param([string]$Path)
@@ -792,6 +847,9 @@ function Set-XPHardening {
 .PARAMETER Skip
     Step names to leave alone, e.g. -Skip Server,SmbDevice,NetBIOS,FileAndPrint
     to keep file sharing working.
+.PARAMETER Force
+    Apply even when the system is not 32-bit Windows XP (5.1). The steps are
+    only tested on XP SP3; on XP x64 or Server 2003 use at your own risk.
 .PARAMETER PassThru
     Also return the step results as objects.
 .EXAMPLE
@@ -807,9 +865,13 @@ function Set-XPHardening {
                      'MSMQ', 'UPnP', 'SimpleTcp', 'Server', 'SmbDevice', 'NetBIOS',
                      'RemoteRegistry', 'Messenger', 'Telnet', 'Guest', 'AutoRun')]
         [string[]]$Skip = @(),
+        [switch]$Force,
         [switch]$PassThru
     )
 
+    if ((-not $WhatIfPreference) -and (-not $Force) -and (-not (Test-IsXP32))) {
+        throw ('Set-XPHardening is built and tested for 32-bit Windows XP SP3 (version 5.1). This system reports {0}. Use -WhatIf to preview, or -Force to apply anyway.' -f (Get-OSVersionInfo))
+    }
     if ((-not $WhatIfPreference) -and (-not (Test-IsAdmin))) {
         throw 'Set-XPHardening must run in an Administrator PowerShell window.'
     }
@@ -834,8 +896,12 @@ function Set-XPHardening {
            Action = 'Close the UPnP Framework firewall exception'
            Run = { Invoke-NetshFirewall @('set', 'service', 'type=UPNP', 'mode=DISABLE', 'profile=ALL'); 'Exception closed' } },
         @{ Name = 'RemoteAssistance'; Reboot = $false
-           Action = 'Turn off Remote Assistance (fAllowToGetHelp = 0)'
-           Run = { Set-RegistryDword -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name 'fAllowToGetHelp' -Value 0; 'Remote Assistance off' } },
+           Action = 'Turn off Remote Assistance (fAllowToGetHelp = 0) and its sessmgr.exe firewall exception'
+           Run = {
+               Set-RegistryDword -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name 'fAllowToGetHelp' -Value 0
+               $n = Set-RemoteAssistanceException
+               'Remote Assistance off, {0} firewall exception(s) disabled' -f $n
+           } },
         @{ Name = 'MSMQ'; Reboot = $false
            Action = 'Stop and disable Message Queuing (ports 1801, 2103-2107, 3527)'
            Run = { Disable-XPService @('MSMQ') } },
@@ -852,16 +918,27 @@ function Set-XPHardening {
            Action = 'Turn off SMB over TCP port 445 (SMBDeviceEnabled = 0, needs reboot)'
            Run = { Set-RegistryDword -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters' -Name 'SMBDeviceEnabled' -Value 0; 'Set to 0, reboot to apply' } },
         @{ Name = 'NetBIOS'; Reboot = $false
-           Action = 'Turn off NetBIOS over TCP/IP on every IP-enabled adapter (137-139)'
+           Action = 'Turn off NetBIOS over TCP/IP on every network interface, including disabled ones (137-139)'
            Run = {
+               # 1. Registry: every NetBT interface, so adapters that are
+               #    disabled or unplugged right now stay off when they come back.
+               $ifaces = @(Get-NetbtInterface)
+               foreach ($i in $ifaces) { Set-RegistryDword -Path $i.Path -Name 'NetbiosOptions' -Value 2 }
+               # 2. WMI: IP-enabled adapters, so the change applies right away.
+               #    ReturnValue 0 = done, 1 = done but needs a reboot.
                $bad = @()
-               $count = 0
+               $live = 0
+               $rebootNeeded = $false
                foreach ($c in @(Get-WmiObject -Class Win32_NetworkAdapterConfiguration -Filter 'IPEnabled = TRUE')) {
                    $r = $c.SetTcpipNetbios(2)
-                   if ($r.ReturnValue -ne 0) { $bad += ('{0} (code {1})' -f $c.Description, $r.ReturnValue) } else { $count++ }
+                   if ($r.ReturnValue -eq 0) { $live++ }
+                   elseif ($r.ReturnValue -eq 1) { $live++; $rebootNeeded = $true }
+                   else { $bad += ('{0} (code {1})' -f $c.Description, $r.ReturnValue) }
                }
                if ($bad.Length -gt 0) { throw ('Failed on: ' + ($bad -join '; ')) }
-               '{0} adapter(s) set' -f $count
+               $msg = '{0} interface(s) set, {1} active adapter(s) applied now' -f $ifaces.Length, $live
+               if ($rebootNeeded) { $msg += ' (reboot required)' }
+               $msg
            } },
         @{ Name = 'RemoteRegistry'; Reboot = $false
            Action = 'Stop and disable Remote Registry'
@@ -873,11 +950,15 @@ function Set-XPHardening {
            Action = 'Stop and disable the Telnet server'
            Run = { Disable-XPService @('TlntSvr') } },
         @{ Name = 'Guest'; Reboot = $false
-           Action = 'Disable the Guest account'
+           Action = 'Disable the built-in Guest account (found by SID, so a renamed Guest is covered)'
            Run = {
-               $out = & net.exe user guest /active:no 2>&1
-               if ($LASTEXITCODE -ne 0) { throw (($out | Out-String).Trim()) }
-               'Guest disabled'
+               $g = Get-GuestAccount
+               if (-not $g) { 'Guest: not installed' }
+               else {
+                   $out = & net.exe user $g.Name /active:no 2>&1
+                   if ($LASTEXITCODE -ne 0) { throw (($out | Out-String).Trim()) }
+                   'Guest account "{0}" disabled' -f $g.Name
+               }
            } },
         @{ Name = 'AutoRun'; Reboot = $false
            Action = 'Turn off AutoRun on all drive types (NoDriveTypeAutoRun = 0xFF)'
@@ -949,6 +1030,7 @@ function Get-XPHardeningStatus {
 
     Write-Section 'Firewall'
     $noExceptions = $false
+    $raException = $false
     try {
         $mgr = New-Object -ComObject HNetCfg.FwMgr
         $prof = $mgr.LocalPolicy.CurrentProfile
@@ -976,6 +1058,9 @@ function Get-XPHardeningStatus {
                 $findings += New-Finding -Area 'Firewall' -Level 'Warn' -Message 'Remote Administration exception is enabled.' -Fix $fixCmd
             }
         } catch { }
+        foreach ($app in $prof.AuthorizedApplications) {
+            if (([string]$app.ProcessImageFileName -like '*\sessmgr.exe') -and $app.Enabled) { $raException = $true }
+        }
     } catch {
         $findings += New-Finding -Area 'Firewall' -Level 'Risk' -Message ('Could not read firewall policy: ' + $_.Exception.Message)
     }
@@ -990,7 +1075,7 @@ function Get-XPHardeningStatus {
     }
 
     Write-Section 'Services'
-    foreach ($n in @('MSMQ', 'upnphost', 'SSDPSRV', 'SimpTcp', 'lanmanserver', 'RemoteRegistry', 'Messenger', 'TlntSvr')) {
+    foreach ($n in @('MSMQ', 'upnphost', 'SSDPSRV', 'SimpTcp', 'lanmanserver', 'Browser', 'RemoteRegistry', 'Messenger', 'TlntSvr')) {
         $w = Get-WmiObject -Class Win32_Service -Filter ("Name = '{0}'" -f $n) -ErrorAction SilentlyContinue
         if (-not $w) {
             $findings += New-Finding -Area 'Services' -Level 'OK' -Message ('{0} is not installed.' -f $n)
@@ -1010,22 +1095,26 @@ function Get-XPHardeningStatus {
         $findings += New-Finding -Area 'SMB' -Level 'Warn' -Message 'SMBDeviceEnabled is not 0, so port 445 stays open.' -Fix ($fixCmd + ', then reboot')
     }
 
-    $adapters = @(Get-WmiObject -Class Win32_NetworkAdapterConfiguration -Filter 'IPEnabled = TRUE' -ErrorAction SilentlyContinue)
-    $nbOn = @($adapters | Where-Object { $_.TcpipNetbiosOptions -ne 2 })
-    if ($nbOn.Length -eq 0) {
-        $findings += New-Finding -Area 'NetBIOS' -Level 'OK' -Message ('NetBIOS over TCP/IP is off on all {0} IP-enabled adapter(s).' -f $adapters.Length)
+    # NetBIOS is checked per NetBT interface, so disabled or unplugged
+    # adapters that would turn NetBIOS back on when reconnected are caught too.
+    $ifaces = @(Get-NetbtInterface)
+    $nbOn = @($ifaces | Where-Object { $_.NetbiosOptions -ne 2 })
+    if ($ifaces.Length -eq 0) {
+        $findings += New-Finding -Area 'NetBIOS' -Level 'Info' -Message 'Could not read the NetBT interface settings.'
+    } elseif ($nbOn.Length -eq 0) {
+        $findings += New-Finding -Area 'NetBIOS' -Level 'OK' -Message ('NetBIOS over TCP/IP is off on all {0} network interface(s).' -f $ifaces.Length)
     } else {
         $names = ($nbOn | ForEach-Object { $_.Description }) -join ', '
-        $findings += New-Finding -Area 'NetBIOS' -Level 'Warn' -Message ('NetBIOS over TCP/IP is on: ' + $names) -Fix $fixCmd
+        $findings += New-Finding -Area 'NetBIOS' -Level 'Warn' -Message ('NetBIOS over TCP/IP is not off on: ' + $names) -Fix $fixCmd
     }
 
-    $guest = Get-WmiObject -Class Win32_UserAccount -Filter "LocalAccount = TRUE AND Name = 'Guest'" -ErrorAction SilentlyContinue
+    $guest = Get-GuestAccount
     if (-not $guest) {
-        $findings += New-Finding -Area 'Accounts' -Level 'Info' -Message 'No local account named Guest found.'
+        $findings += New-Finding -Area 'Accounts' -Level 'Info' -Message 'Built-in Guest account not found.'
     } elseif ($guest.Disabled) {
-        $findings += New-Finding -Area 'Accounts' -Level 'OK' -Message 'Guest account is disabled.'
+        $findings += New-Finding -Area 'Accounts' -Level 'OK' -Message ('Guest account ("{0}") is disabled.' -f $guest.Name)
     } else {
-        $findings += New-Finding -Area 'Accounts' -Level 'Warn' -Message 'Guest account is enabled.' -Fix $fixCmd
+        $findings += New-Finding -Area 'Accounts' -Level 'Warn' -Message ('Guest account ("{0}") is enabled.' -f $guest.Name) -Fix $fixCmd
     }
 
     $ts = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -ErrorAction SilentlyContinue
@@ -1033,6 +1122,12 @@ function Get-XPHardeningStatus {
         $findings += New-Finding -Area 'Remote' -Level 'OK' -Message 'Remote Assistance is off.'
     } else {
         $findings += New-Finding -Area 'Remote' -Level 'Warn' -Message 'Remote Assistance is on.' -Fix $fixCmd
+    }
+    if ($raException) {
+        $level = 'Warn'
+        $note = ''
+        if ($noExceptions) { $level = 'Info'; $note = ' (ignored while exceptions are disabled)' }
+        $findings += New-Finding -Area 'Remote' -Level $level -Message ('Remote Assistance firewall exception is enabled{0}.' -f $note) -Fix $fixCmd
     }
 
     $explorer = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -ErrorAction SilentlyContinue
@@ -1047,6 +1142,13 @@ function Get-XPHardeningStatus {
     # replaced, not by KB number: later updates (POSReady 2009 and others)
     # supersede the original KBs, so a fully patched PC often lacks them.
     # Minimum versions are from Microsoft's file-information tables (XP SP3, x86).
+    # The minimum versions below are 32-bit XP SP3 (5.1.2600.x) file versions.
+    # XP x64 / Server 2003 files are 5.2.3790.x and would always compare as
+    # newer, so the check is skipped there instead of reporting false "patched".
+    $patchCheck = Test-IsXP32
+    if (-not $patchCheck) {
+        $findings += New-Finding -Area 'Patches' -Level 'Info' -Message ('Wormable-flaw checks only cover 32-bit Windows XP SP3; skipped on version {0}. Check this system''s updates separately.' -f (Get-OSVersionInfo))
+    }
     $sys32 = $env:windir + '\system32'
     $fileChecks = @(
         @{ Name = 'MS08-067, SMB worm flaw (Conficker)'; Kb = 'KB958644';  File = 'netapi32.dll';       Min = '5.1.2600.5694'
@@ -1057,6 +1159,7 @@ function Get-XPHardeningStatus {
            Fix = 'KB4500331 from the Microsoft Update Catalog (not offered through Windows Update on XP)' }
     )
     foreach ($c in $fileChecks) {
+        if (-not $patchCheck) { break }
         $path = $sys32 + '\' + $c.File
         $leaf = ($c.File -split '\\')[-1]
         $current = Get-FileVersionObject -Path $path

@@ -1,4 +1,4 @@
-NetSecToolkitXP 0.2.2
+NetSecToolkitXP 0.2.3
 =====================
 Windows XP SP3 / PowerShell 2.0 test build of NetSecToolkit.
 Everything is read-only except Set-XPHardening, which applies the
@@ -57,16 +57,22 @@ Set-XPHardening          Applies the XP hardening baseline in one run:
                          - Closes File and Printer Sharing, Remote Desktop,
                            Remote Admin and UPnP firewall exceptions
                          - Remote Assistance off (fAllowToGetHelp = 0)
+                           and its sessmgr.exe firewall exception off
                          - Stops and disables MSMQ, UPnP Device Host, SSDP,
                            Simple TCP/IP Services, Server + Computer Browser,
                            Remote Registry, Messenger, Telnet
                          - SMBDeviceEnabled = 0 (closes 445 after reboot)
-                         - NetBIOS over TCP/IP off on all IP adapters
-                         - Guest account disabled
+                         - NetBIOS over TCP/IP off on every network
+                           interface, incl. disabled/unplugged adapters
+                         - Built-in Guest account disabled (found by
+                           SID, so a renamed Guest is covered)
                          - AutoRun off (NoDriveTypeAutoRun = 0xFF)
                          Needs an Administrator PowerShell window.
+                         Only applies on 32-bit XP (5.1); elsewhere it
+                         stops unless you add -Force.
                          -WhatIf                preview, change nothing
                          -Confirm               ask before each step
+                         -Force                 apply on non-XP Windows
                          -Skip Name,Name        leave steps alone. Names:
                            Firewall Logging FileAndPrint RemoteDesktop
                            RemoteAdmin UPnPException RemoteAssistance MSMQ
@@ -134,6 +140,12 @@ Testing and known limits
   data and a scan for PS 3.0+ syntax. Not yet run on the physical XP
   laptop (Dell Inspiron 1521), where the same steps were first done by
   hand.
+- 0.2.3 came from a code review. Each fix was checked against mocks that
+  reproduce the bug on 0.2.2 first; the fixes have not had an XP VM run
+  yet.
+- XP x64 / Server 2003 (5.2) are not supported. Get-XPHardeningStatus
+  skips the wormable-flaw checks there, because their 5.2.3790.x file
+  versions would always look newer than the XP fixes.
 - Remote Desktop / Remote Admin exceptions don't exist on XP Home; those
   steps report Failed there. Re-run with -Skip RemoteDesktop,RemoteAdmin.
 - Firewall logging is one setting for all profiles on XP, read from
@@ -144,6 +156,14 @@ Testing and known limits
 
 Changes
 -------
+0.2.3  Code review fixes. XP x64 / Server 2003 were reported as patched
+       against Conficker, WannaCry and BlueKeep even when they weren't;
+       the patch check now only runs on 32-bit XP, and Set-XPHardening
+       refuses other versions without -Force. The NetBIOS step no longer
+       reports Failed on "done, reboot required" (WMI code 1) and now
+       covers disabled/unplugged adapters. A renamed Guest account is
+       found by SID. The Remote Assistance firewall exception is turned
+       off too. Status also checks the Computer Browser service.
 0.2.2  Set-XPHardening also turns on firewall logging and turns off
        Remote Assistance. Firewall logging is now read from netsh (the
        registry check was wrong). Tables fit the console window.
