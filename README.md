@@ -44,7 +44,7 @@ The repo also has `relay\Start-ClaudeRelay.ps1`, which runs on the modern host P
 2. Extract it. Keep `NetSecToolkitXP.exe` and the `NetSecToolkitXP` folder together.
 3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for option H.
 
-```
+![NetSecToolkitXP.exe menu running on Windows XP SP3](docs/images/exe-menu.png)
  NetSecToolkitXP 0.4.0 - Windows XP security toolkit
  Computer: XPVM   User: Edward   Administrator: yes
   Checks (change nothing)
@@ -376,7 +376,8 @@ All real-machine testing so far has been on one VM:
 | 0.2.0 | First real run | Three false "not patched" risks on a fully patched VM, so the patch check now compares file versions (fixed in 0.2.1) |
 | 0.2.2 | Full hardening, from the pre-hardening snapshot | 0 risks, 0 warnings after reboot; all five commands ran without errors |
 | 0.3.0 | `Invoke-XPSecurityCheck`, on the hardened VM | Ran end to end and saved its transcript, HTML report and snapshot; three false findings, fixed in 0.3.1. Also the first VM run of the 0.2.3 fixes (NetBIOS checked on every interface, Guest found by its SID) |
-| 0.3.1, 0.4.0 | Not yet | Tested on mocks (and the 0.4.0 launcher under Wine); VM run pending |
+| 0.4.0 | `NetSecToolkitXP.exe`, double-clicked on the VM | Opened the menu (window title, version, administrator detected) and option H ran the hardening |
+| 0.3.1 | Not yet on its own | Its changes are included in 0.4.0 |
 
 ### 0.2.2: hardening run
 
@@ -446,8 +447,9 @@ Also reported, as Info:
 
 ### Still to run on the VM
 
-- [ ] 0.3.1 / 0.4.0: `Set-XPHardening` from the pre-hardening snapshot, reboot, then `Invoke-XPSecurityCheck`. Expected result: 0 risks, 0 warnings.
-- [ ] 0.4.0: double-click `NetSecToolkitXP.exe`, then run options 1, H and A from the menu.
+- [x] 0.4.0: double-click `NetSecToolkitXP.exe` on XP: the menu opens, and option H (hardening) ran.
+- [ ] 0.4.0: after option H and a reboot, run option 1 (full check). Expected result: 0 risks, 0 warnings.
+- [ ] 0.4.0: option A (assistant) from the menu.
 - [ ] Claude mode against the live API, through `relay/Start-ClaudeRelay.ps1`.
 
 ## External verification
@@ -517,7 +519,7 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
   - **Imports:** its import table lists only functions that exist in XP's `kernel32.dll` and `user32.dll`, and its PE header targets Windows 5.1.
   - **Real PowerShell:** the same command line loads the module.
   - **Menu:** driven on mocks through every path: preview then cancel, `S` with a skip list then `YES`, an unknown step name, no report yet, the device sweep prompt, the assistant, and an invalid choice.
-  - **Not yet:** run on the XP VM.
+  - **On the XP VM:** the .exe opened the menu and option H ran. See [Results by version](#results-by-version).
 - Files are pure ASCII with CRLF line endings, so PS 2.0 reads them correctly and they open cleanly in XP's Notepad.
 - Recommended: test in an XP SP3 VM using **NAT or Host-only networking** (never Bridged), with a snapshot taken before running `Set-XPHardening`.
 
