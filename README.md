@@ -487,6 +487,16 @@ Also reported, as Info:
 - **USB:** no USB storage devices have been connected.
 - **Network:** this run saved the device list as the baseline.
 
+### 0.4.0 and 0.5.0: `NetSecToolkitXP.exe` on XP
+
+Double-clicked from the extracted release zip on the VM. With no execution policy change and no `Import-Module`:
+
+- **The menu opened:** the window title shows the version, and it detected the computer, the user and administrator rights.
+- **0.4.0:** option H previewed the hardening with `-WhatIf`, then applied it after `YES`.
+- **0.5.0:** the menu includes the new option V (virus and threat check).
+
+![NetSecToolkitXP.exe 0.5.0 menu on the XP VM](docs/images/exe-menu.png)
+
 ### Still to run on the VM
 
 - [x] 0.4.0: double-click `NetSecToolkitXP.exe` on XP: the menu opens, and option H (hardening) ran.
