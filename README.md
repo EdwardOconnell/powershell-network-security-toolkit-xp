@@ -1,6 +1,6 @@
 # NetSecToolkitXP
 
-![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.5.0](https://img.shields.io/badge/version-0.5.0-lightgrey)
+![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-lightgrey)
 
 The Windows XP SP3 / PowerShell 2.0 edition of my [PowerShell Network Security Toolkit](https://github.com/EdwardOconnell/powershell-network-security-toolkit).
 
@@ -42,7 +42,7 @@ The repo also has `relay\Start-ClaudeRelay.ps1`, which runs on the modern host P
 
 ## Run it with NetSecToolkitXP.exe
 
-1. Download `NetSecToolkitXP-0.5.0.zip` from the [Releases](../../releases) page (or the repo zip), and copy it to the XP machine.
+1. Download `NetSecToolkitXP-0.5.1.zip` from the [Releases](../../releases) page (or the repo zip), and copy it to the XP machine.
 2. Extract it. Keep `NetSecToolkitXP.exe` and the `NetSecToolkitXP` folder together.
 3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for option H.
 
@@ -590,6 +590,7 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 
 ## Changelog
 
+- **0.5.1:** the copyright (`Copyright Edward O'Connell III 2026`) now shows in the menu, at the top of the full check, at the bottom of HTML reports, in the .exe's file properties and in the module manifest.
 - **0.5.0:**
   - **Threat check:** `Get-ThreatExposureXP` rates exposure to current XP threats, and `Find-MalwareIndicatorXP` looks for signs of infection, checks the antivirus, and exports SHA-256 hashes with VirusTotal links.
   - **Where it shows up:** menu option **V**, part of `Invoke-XPSecurityCheck` (which now also saves `Hashes_<time>.csv`), and four new assistant topics (threats, malware, VirusTotal, antivirus).
@@ -623,6 +624,6 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 
 Use this only on systems you own or are authorized to manage. Windows XP has been unsupported since 2014. Hardening reduces the network attack surface, but it doesn't make XP safe for everyday internet use. Keep XP machines off untrusted networks.
 
-## License
+## Copyright
 
-Copyright (c) 2026 Edward O'Connell III. Released under the [MIT License](LICENSE).
+Copyright Edward O'Connell III 2026

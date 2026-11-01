@@ -1,6 +1,6 @@
-NetSecToolkitXP 0.5.0
+NetSecToolkitXP 0.5.1
 =====================
-Copyright (c) 2026 Edward O'Connell III. MIT License.
+Copyright Edward O'Connell III 2026
 
 Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit, with a security
 assistant. Everything is read-only except Set-XPHardening, which applies
@@ -258,6 +258,8 @@ Testing and known limits
 
 Changes
 -------
+0.5.1  Copyright Edward O'Connell III 2026 shown in the menu, the full
+       check, HTML reports, the .exe properties and the manifest.
 0.5.0  Threat check (menu option V, and part of Invoke-XPSecurityCheck):
        Get-ThreatExposureXP and Find-MalwareIndicatorXP, with SHA-256 /
        VirusTotal export (Hashes_<time>.csv). Assistant topics: threats,

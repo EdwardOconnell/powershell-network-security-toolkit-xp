@@ -1,8 +1,8 @@
 #include <winver.h>
 1 ICON "NetSecToolkitXP.ico"
 1 VERSIONINFO
-FILEVERSION 0,5,0,0
-PRODUCTVERSION 0,5,0,0
+FILEVERSION 0,5,1,0
+PRODUCTVERSION 0,5,1,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -12,12 +12,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "Edward O'Connell III"
       VALUE "FileDescription", "NetSecToolkitXP launcher"
-      VALUE "FileVersion", "0.5.0"
+      VALUE "FileVersion", "0.5.1"
       VALUE "InternalName", "NetSecToolkitXP"
-      VALUE "LegalCopyright", "Copyright (c) 2026 Edward O'Connell III. MIT License."
+      VALUE "LegalCopyright", "Copyright Edward O'Connell III 2026"
       VALUE "OriginalFilename", "NetSecToolkitXP.exe"
       VALUE "ProductName", "NetSecToolkitXP"
-      VALUE "ProductVersion", "0.5.0"
+      VALUE "ProductVersion", "0.5.1"
     END
   END
   BLOCK "VarFileInfo"
