@@ -46,27 +46,7 @@ The repo also has `relay\Start-ClaudeRelay.ps1`, which runs on the modern host P
 2. Extract it. Keep `NetSecToolkitXP.exe` and the `NetSecToolkitXP` folder together.
 3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for option H.
 
-![NetSecToolkitXP.exe 0.5.0 menu running on Windows XP SP3](docs/images/exe-menu.png)
- NetSecToolkitXP 0.4.0 - Windows XP security toolkit
- Computer: XPVM   User: Edward   Administrator: yes
-  Checks (change nothing)
-    1  Full security check (all of the below, saves a report)
-    2  Hardening status
-    3  Firewall exceptions
-    4  Accounts and logon
-    5  Firewall log (what was blocked)
-    6  Devices on the network
-    7  Router ports and UPnP
-    8  Network adapters and connectivity
-    9  USB storage history
-  Fix
-    H  Harden this PC (shows a preview first)
-  Help
-    A  Ask the assistant (what to fix first, what a finding means)
-    R  Open the last report
-    P  PowerShell prompt with the toolkit loaded (type exit to come back)
-    Q  Quit
-```
+![NetSecToolkitXP.exe 0.5.0 menu running on Windows XP SP3](docs/images/exe-menu-0.5.0.png)
 
 **Option H** always shows the `-WhatIf` preview first and changes nothing until you type `YES`. You can type `S` to name steps to leave alone; unknown step names cancel the run. Then it offers to restart.
 
@@ -495,7 +475,7 @@ Double-clicked from the extracted release zip on the VM. With no execution polic
 - **0.4.0:** option H previewed the hardening with `-WhatIf`, then applied it after `YES`.
 - **0.5.0:** the menu includes the new option V (virus and threat check).
 
-![NetSecToolkitXP.exe 0.5.0 menu on the XP VM](docs/images/exe-menu.png)
+![NetSecToolkitXP.exe 0.5.0 menu on the XP VM](docs/images/exe-menu-0.5.0.png)
 
 ### Still to run on the VM
 
