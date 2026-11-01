@@ -1,5 +1,6 @@
 /*
  * NetSecToolkitXP.exe - launcher for the NetSecToolkitXP PowerShell module.
+ * Copyright (c) 2026 Edward O'Connell III. MIT License (see LICENSE).
  *
  * Double-click it to open the toolkit menu (Start-NetSecToolkitXP), or run
  * it from a command prompt with a command to run that instead, e.g.

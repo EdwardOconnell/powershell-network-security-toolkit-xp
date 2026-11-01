@@ -14,7 +14,7 @@ BEGIN
       VALUE "FileDescription", "NetSecToolkitXP launcher"
       VALUE "FileVersion", "0.5.0"
       VALUE "InternalName", "NetSecToolkitXP"
-      VALUE "LegalCopyright", "MIT License"
+      VALUE "LegalCopyright", "Copyright (c) 2026 Edward O'Connell III. MIT License."
       VALUE "OriginalFilename", "NetSecToolkitXP.exe"
       VALUE "ProductName", "NetSecToolkitXP"
       VALUE "ProductVersion", "0.5.0"

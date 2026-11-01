@@ -622,3 +622,7 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 ## Disclaimer
 
 Use this only on systems you own or are authorized to manage. Windows XP has been unsupported since 2014. Hardening reduces the network attack surface, but it doesn't make XP safe for everyday internet use. Keep XP machines off untrusted networks.
+
+## License
+
+Copyright (c) 2026 Edward O'Connell III. Released under the [MIT License](LICENSE).

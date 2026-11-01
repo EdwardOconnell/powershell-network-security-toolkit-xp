@@ -1,5 +1,7 @@
 NetSecToolkitXP 0.5.0
 =====================
+Copyright (c) 2026 Edward O'Connell III. MIT License.
+
 Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit, with a security
 assistant. Everything is read-only except Set-XPHardening, which applies
 the hardening baseline (use -WhatIf first to preview it), and

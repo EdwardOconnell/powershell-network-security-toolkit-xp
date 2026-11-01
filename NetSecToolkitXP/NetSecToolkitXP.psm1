@@ -1,4 +1,5 @@
 # NetSecToolkitXP 0.5.0 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
+# Copyright (c) 2026 Edward O'Connell III. MIT License (see LICENSE).
 # Written for PS 2.0 only: no [pscustomobject], [ordered], -in, member
 # enumeration, simplified Where-Object syntax, or Win8+ Net* cmdlets.
 # Keep this file pure ASCII: PS 2.0 on XP reads BOM-less files as ANSI.
