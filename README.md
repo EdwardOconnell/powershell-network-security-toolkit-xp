@@ -46,9 +46,7 @@ The repo also has `relay\Start-ClaudeRelay.ps1`, which runs on the modern host P
 2. Extract it. Keep `NetSecToolkitXP.exe` and the `NetSecToolkitXP` folder together.
 3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for option H.
 
-![NetSecToolkitXP.exe menu running on Windows XP SP3](docs/images/exe-menu.png)
-
-*(Screenshot from 0.4.0. Version 0.5.0 adds **V  Virus and threat check** under Checks.)*
+![NetSecToolkitXP.exe 0.5.0 menu running on Windows XP SP3](docs/images/exe-menu.png)
  NetSecToolkitXP 0.4.0 - Windows XP security toolkit
  Computer: XPVM   User: Edward   Administrator: yes
   Checks (change nothing)
@@ -421,7 +419,7 @@ All real-machine testing so far has been on one VM:
 | 0.3.0 | `Invoke-XPSecurityCheck`, on the hardened VM | Ran end to end and saved its transcript, HTML report and snapshot; three false findings, fixed in 0.3.1. Also the first VM run of the 0.2.3 fixes (NetBIOS checked on every interface, Guest found by its SID) |
 | 0.4.0 | `NetSecToolkitXP.exe`, double-clicked on the VM | Opened the menu (window title, version, administrator detected) and option H ran the hardening |
 | 0.3.1 | Not yet on its own | Its changes are included in 0.4.0 |
-| 0.5.0 | Not yet | Threat check tested on mocks (clean, hardened, infected) |
+| 0.5.0 | `NetSecToolkitXP.exe` 0.5.0, double-clicked on the VM | Opened the 0.5.0 menu with the new option V; the threat check itself is tested on mocks (clean, hardened, infected), VM run pending |
 
 ### 0.2.2: hardening run
 
