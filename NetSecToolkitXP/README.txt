@@ -1,8 +1,14 @@
-NetSecToolkitXP 0.2.3
+NetSecToolkitXP 0.3.0
 =====================
-Windows XP SP3 / PowerShell 2.0 test build of NetSecToolkit.
-Everything is read-only except Set-XPHardening, which applies the
-hardening baseline (use -WhatIf first to preview it).
+Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit, with a security
+assistant. Everything is read-only except Set-XPHardening, which applies
+the hardening baseline (use -WhatIf first to preview it), and
+Set-XPAssistantConfig, which only saves the assistant's settings.
+
+Quick start (Administrator window):
+  Import-Module NetSecToolkitXP
+  Invoke-XPSecurityCheck         # check everything, save a report
+  xpai                           # ask the assistant; type plan
 
 Requirements
 ------------
@@ -66,6 +72,12 @@ Set-XPHardening          Applies the XP hardening baseline in one run:
                            interface, incl. disabled/unplugged adapters
                          - Built-in Guest account disabled (found by
                            SID, so a renamed Guest is covered)
+                         - No anonymous (null session) listing of shares
+                           and accounts (RestrictAnonymous = 1, needs reboot)
+                         - No LM password hashes (NoLMHash = 1)
+                         - NTLMv2 only (LmCompatibilityLevel = 3)
+                         - Passwords 8+ characters, lockout for 30 min
+                           after 10 bad tries (net accounts)
                          - AutoRun off (NoDriveTypeAutoRun = 0xFF)
                          Needs an Administrator PowerShell window.
                          Only applies on 32-bit XP (5.1); elsewhere it
@@ -77,11 +89,15 @@ Set-XPHardening          Applies the XP hardening baseline in one run:
                            Firewall Logging FileAndPrint RemoteDesktop
                            RemoteAdmin UPnPException RemoteAssistance MSMQ
                            UPnP SimpleTcp Server SmbDevice NetBIOS
-                           RemoteRegistry Messenger Telnet Guest AutoRun
+                           RemoteRegistry Messenger Telnet Guest
+                           RestrictAnonymous NoLMHash NTLMv2 PasswordPolicy
+                           AutoRun
                          Keep file sharing working:
-                           -Skip Server,SmbDevice,NetBIOS,FileAndPrint
+                             -Skip Server,SmbDevice,NetBIOS,FileAndPrint
+                         Needs to reach Windows 9x / very old NAS shares:
+                           -Skip NTLMv2
 
-Get-XPHardeningStatus    Read-only check of everything above, plus the
+Get-XPHardeningStatus    Read-only check of everything above (and DEP), plus the
                          wormable-flaw fixes, checked by file version so
                          later superseding updates count:
                            Conficker  netapi32.dll >= 5.1.2600.5694
@@ -91,7 +107,47 @@ Get-XPHardeningStatus    Read-only check of everything above, plus the
                          listening on the network. Ends with a risk/warning
                          count.
 
-All commands accept -PassThru to return objects as well as the report.
+Get-AccountAuditXP       Local accounts and Administrators members. Flags
+                         accounts allowed a blank password, enabled
+                         HelpAssistant/SUPPORT accounts, blank-password
+                         network logons, auto logon (and a plain-text
+                         Winlogon DefaultPassword), no screen saver lock.
+
+Get-FirewallLogXP        Summarizes pfirewall.log: blocked packets by
+                         source, likely port scans (10+ ports), blocked
+                         traffic from the internet or outside the subnet.
+                         -Hours 24              how far back to read
+
+Test-RouterExposureXP    Tries 16 common TCP ports on the router and checks
+                         whether it answers UPnP (SSDP). Inside view only;
+                         use GRC ShieldsUP from a modern PC for the outside.
+                         -Router 192.168.1.1    default: the gateway
+
+Get-USBHistoryXP         Every USB storage device ever connected (USBSTOR),
+                         with serial numbers.
+
+Invoke-XPSecurityCheck   Runs all of the checks, flags devices and USB drives
+                         that are new since the last run, prints a fix
+                         order, and saves Check_*.txt, Report_*.html and
+                         Snapshot_*.xml to My Documents\SecurityChecks.
+                         -ActiveScan            ping-sweep the subnet too
+                         -NoRouter / -NoReport  skip the router / save nothing
+
+Invoke-XPAssistant       Security assistant (alias: xpai). Uses the findings
+                         from the checks you ran this session.
+                           xpai                 interactive XP-AI> prompt
+                           xpai -Scan           run the status checks first
+                           xpai "what is netbios"
+                         At the prompt: summary, plan, list, explain <n>,
+                         scan, topics, help, exit, or any question.
+                         Offline by default: built-in notes, nothing leaves
+                         this PC. Claude mode: see below.
+
+Set-XPAssistantConfig    Saves the relay address/token for Claude mode.
+                           -RelayUrl http://<host>:8787 -RelayToken <token>
+                           -DefaultMode Claude  -Test  -Clear
+
+The checks accept -PassThru to return objects as well as the report.
 Get-Help <command> -Full shows the built-in help.
 
 Hardening a fresh XP machine
@@ -111,6 +167,20 @@ Side effects: this PC can no longer share files/printers, open other PCs'
 shares (\\PC\share), accept Remote Desktop, or host LAN games. Browsing,
 downloads and Windows Update are unaffected (outbound traffic).
 
+Claude mode (optional)
+----------------------
+XP cannot make the TLS 1.2 connections the Claude API needs, so a relay
+runs on a modern PC (for a VM: the host) and makes the call for it.
+On the host, in PowerShell 7 (needs an Anthropic API key; usage is billed):
+  $env:ANTHROPIC_API_KEY = 'sk-ant-...'
+  .\relay\Start-ClaudeRelay.ps1 -AllowedClient <XP VM address>
+It prints a token and the command to run on XP:
+  Set-XPAssistantConfig -RelayUrl http://<host>:8787 -RelayToken <token> -DefaultMode Claude -Test
+The API key never leaves the host. MAC addresses, the PC name and your
+user name are masked before sending (-NoRedact turns that off). The XP-to-
+relay hop is plain HTTP: keep it on a host-only or NAT VM network. If the
+relay is down, the assistant answers from its offline notes.
+
 Examples
 --------
   Get-NetAdapterHealthXP
@@ -125,8 +195,9 @@ Differences from NetSecToolkit (PowerShell 7)
 - Sweep runs one host at a time (no -Parallel in PS 2.0); a /24 takes
   under a minute at the default timeout. Subnets larger than /22 are
   capped to the local /24.
-- No router exposure, speed test or Wi-Fi commands yet. Set-XPHardening
-  covers what Set-FirewallBaseline does on the PS7 module, and more.
+- No speed test or Wi-Fi commands yet. Set-XPHardening covers what
+  Set-FirewallBaseline does on the PS7 module, and more.
+  Invoke-XPSecurityCheck is the XP version of Invoke-DailySecurityCheck.
 - Settings on the Domain profile are reported as Info unless the PC is
   actually on a domain network.
 
@@ -143,6 +214,10 @@ Testing and known limits
 - 0.2.3 came from a code review. Each fix was checked against mocks that
   reproduce the bug on 0.2.2 first; the fixes have not had an XP VM run
   yet.
+- 0.3.0 (new checks, hardening steps and the assistant) was tested with
+  mocked data in PowerShell 7, including Claude mode end to end through
+  the relay to a fake API, plus an independent PS 2.0 compatibility
+  review. It has not had an XP VM run yet.
 - XP x64 / Server 2003 (5.2) are not supported. Get-XPHardeningStatus
   skips the wormable-flaw checks there, because their 5.2.3790.x file
   versions would always look newer than the XP fixes.
@@ -150,12 +225,21 @@ Testing and known limits
   steps report Failed there. Re-run with -Skip RemoteDesktop,RemoteAdmin.
 - Firewall logging is one setting for all profiles on XP, read from
   netsh firewall show logging.
-- netsh and arp -a parsing expects English-language XP output.
+- netsh, arp -a, net accounts and net localgroup parsing expects
+  English-language XP output.
 - DHCP lease time uses System.Management; if it shows blank, ipconfig /all
   has it.
 
 Changes
 -------
+0.3.0  Security assistant: Invoke-XPAssistant (xpai), offline notes, fix
+       order and finding explanations, optional Claude mode through
+       relay\Start-ClaudeRelay.ps1; Set-XPAssistantConfig. New checks:
+       Get-AccountAuditXP, Get-FirewallLogXP, Test-RouterExposureXP,
+       Get-USBHistoryXP, and the all-in-one Invoke-XPSecurityCheck with
+       HTML report and new-device/new-USB alerts. New hardening steps:
+       RestrictAnonymous, NoLMHash, NTLMv2, PasswordPolicy; status checks
+       them and DEP.
 0.2.3  Code review fixes. XP x64 / Server 2003 were reported as patched
        against Conficker, WannaCry and BlueKeep even when they weren't;
        the patch check now only runs on 32-bit XP, and Set-XPHardening
