@@ -46,7 +46,7 @@ The repo also has `relay\Start-ClaudeRelay.ps1`, which runs on the modern host P
 2. Extract it. Keep `NetSecToolkitXP.exe` and the `NetSecToolkitXP` folder together.
 3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for option H.
 
-![NetSecToolkitXP.exe 0.5.0 menu running on Windows XP SP3](docs/images/exe-menu-0.5.0.png)
+![NetSecToolkitXP.exe 0.5.1 menu running on Windows XP SP3](docs/images/exe-menu-0.5.1.png)
 
 **Option H** always shows the `-WhatIf` preview first and changes nothing until you type `YES`. You can type `S` to name steps to leave alone; unknown step names cancel the run. Then it offers to restart.
 
@@ -400,6 +400,7 @@ All real-machine testing so far has been on one VM:
 | 0.4.0 | `NetSecToolkitXP.exe`, double-clicked on the VM | Opened the menu (window title, version, administrator detected) and option H ran the hardening |
 | 0.3.1 | Not yet on its own | Its changes are included in 0.4.0 |
 | 0.5.0 | `NetSecToolkitXP.exe` 0.5.0, double-clicked on the VM | Opened the 0.5.0 menu with the new option V; the threat check itself is tested on mocks (clean, hardened, infected), VM run pending |
+| 0.5.1 | `NetSecToolkitXP.exe` 0.5.1 on the VM | Menu shows version 0.5.1 and the copyright line |
 
 ### 0.2.2: hardening run
 
@@ -467,15 +468,16 @@ Also reported, as Info:
 - **USB:** no USB storage devices have been connected.
 - **Network:** this run saved the device list as the baseline.
 
-### 0.4.0 and 0.5.0: `NetSecToolkitXP.exe` on XP
+### 0.4.0 to 0.5.1: `NetSecToolkitXP.exe` on XP
 
 Double-clicked from the extracted release zip on the VM. With no execution policy change and no `Import-Module`:
 
 - **The menu opened:** the window title shows the version, and it detected the computer, the user and administrator rights.
 - **0.4.0:** option H previewed the hardening with `-WhatIf`, then applied it after `YES`.
 - **0.5.0:** the menu includes the new option V (virus and threat check).
+- **0.5.1:** the menu shows the version and **Copyright Edward O'Connell III 2026** under the title.
 
-![NetSecToolkitXP.exe 0.5.0 menu on the XP VM](docs/images/exe-menu-0.5.0.png)
+![NetSecToolkitXP.exe 0.5.1 menu on the XP VM](docs/images/exe-menu-0.5.1.png)
 
 ### Still to run on the VM
 
