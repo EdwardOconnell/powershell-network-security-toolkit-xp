@@ -1,4 +1,4 @@
-NetSecToolkitXP 0.4.0
+NetSecToolkitXP 0.5.0
 =====================
 Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit, with a security
 assistant. Everything is read-only except Set-XPHardening, which applies
@@ -7,6 +7,7 @@ Set-XPAssistantConfig, which only saves the assistant's settings.
 
 Easiest: double-click NetSecToolkitXP.exe (keep it next to this
 NetSecToolkitXP folder). It opens a numbered menu: 1 = full check,
+V = virus and threat check,
 H = harden (preview first, applies only after you type YES),
 A = assistant, Q = quit. No Set-ExecutionPolicy or Import-Module needed.
 If an antivirus blocks the .exe, double-click NetSecToolkitXP.cmd instead.
@@ -149,6 +150,19 @@ Invoke-XPAssistant       Security assistant (alias: xpai). Uses the findings
                          Offline by default: built-in notes, nothing leaves
                          this PC. Claude mode: see below.
 
+Get-ThreatExposureXP     Rates this PC Protected / Partly / Exposed against
+                         WannaCry, Conficker, BlueKeep, USB worms, password
+                         guessing and theft, and web/email ransomware, from
+                         its real patches and settings.
+
+Find-MalwareIndicatorXP  Not an antivirus: looks for signs of infection where
+                         XP malware hides (Run keys, Startup, Winlogon,
+                         AppInit_DLLs, IFEO, Temp/RECYCLER programs, hosts
+                         file, autorun.inf, scheduled tasks), checks the
+                         antivirus, and saves SHA-256 hashes with VirusTotal
+                         links to check from a modern PC.
+                         -ExportPath file.csv   save the hashes
+
 Start-NetSecToolkitXP    The numbered menu NetSecToolkitXP.exe opens.
 
 Set-XPAssistantConfig    Saves the relay address/token for Claude mode.
@@ -242,6 +256,10 @@ Testing and known limits
 
 Changes
 -------
+0.5.0  Threat check (menu option V, and part of Invoke-XPSecurityCheck):
+       Get-ThreatExposureXP and Find-MalwareIndicatorXP, with SHA-256 /
+       VirusTotal export (Hashes_<time>.csv). Assistant topics: threats,
+       malware, VirusTotal, antivirus.
 0.4.0  NetSecToolkitXP.exe: double-click launcher that opens the new
        Start-NetSecToolkitXP menu (or runs one command given after it),
        plus NetSecToolkitXP.cmd as a fallback. Reports fall back to

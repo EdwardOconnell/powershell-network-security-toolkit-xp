@@ -1,4 +1,4 @@
-# NetSecToolkitXP 0.4.0 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
+# NetSecToolkitXP 0.5.0 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
 # Written for PS 2.0 only: no [pscustomobject], [ordered], -in, member
 # enumeration, simplified Where-Object syntax, or Win8+ Net* cmdlets.
 # Keep this file pure ASCII: PS 2.0 on XP reads BOM-less files as ANSI.
@@ -22,7 +22,7 @@ $script:RiskyPorts = @{
 
 $script:Ipv4Pattern = '^\d{1,3}(\.\d{1,3}){3}$'
 
-$script:ToolkitVersion = '0.4.0'
+$script:ToolkitVersion = '0.5.0'
 
 # Findings from the last run of each audit command, keyed by command name.
 # Invoke-XPAssistant reads these, so it can explain what was just run.
@@ -2035,8 +2035,8 @@ function Invoke-XPSecurityCheck {
 .DESCRIPTION
     Runs, in order: Get-XPHardeningStatus, Get-AccountAuditXP,
     Get-NetAdapterHealthXP, Get-FirewallLogXP, Find-NetworkDeviceXP (ARP
-    cache only unless -ActiveScan), Test-RouterExposureXP and
-    Get-USBHistoryXP. Then it flags devices and USB drives that are new
+    cache only unless -ActiveScan), Test-RouterExposureXP, Get-USBHistoryXP,
+    Get-ThreatExposureXP and Find-MalwareIndicatorXP. Then it flags devices and USB drives that are new
     since the last check, prints a summary and the assistant's fix order,
     and saves a transcript, an HTML report and a snapshot to ReportDir.
     Read-only: it changes no settings.
@@ -2147,6 +2147,13 @@ function Invoke-XPSecurityCheck {
             }
         }
 
+        $exposure = Get-ThreatExposureXP -PassThru
+        if ($exposure) { $all += @($exposure.Findings) }
+        $hashFile = $null
+        if (-not $NoReport) { $hashFile = Join-Path $ReportDir ('Hashes_' + $stamp + '.csv') }
+        $mal = Find-MalwareIndicatorXP -ExportPath $hashFile -PassThru
+        if ($mal) { $all += @($mal.Findings) }
+
         $all += $extra
         Save-RunFindings -Name 'Invoke-XPSecurityCheck' -Findings $extra
 
@@ -2196,7 +2203,7 @@ function Invoke-XPSecurityCheck {
         Export-FindingsHtml -Findings $all -Path $htmlFile -Title ('XP security check ' + $stamp) -Notes $notes -Plan @(Get-AssistantFixPlan -Findings $all)
         Write-Host ''
         Write-Host ('  Saved to {0}' -f $ReportDir) -ForegroundColor Green
-        Write-Host ('    Report_{0}.html (open in a browser), Check_{0}.txt, Snapshot_{0}.xml' -f $stamp) -ForegroundColor Green
+        Write-Host ('    Report_{0}.html (open in a browser), Check_{0}.txt, Snapshot_{0}.xml, Hashes_{0}.csv' -f $stamp) -ForegroundColor Green
     }
 
     if ($PassThru) { $all }
@@ -2335,9 +2342,25 @@ $script:AssistantKB = @(
        Text = 'XP''s last regular security updates came out in April 2014, with a few emergency fixes after that (WannaCry in 2017, BlueKeep in 2019). Legacy Update (legacyupdate.net) can still install the XP updates Microsoft published. The toolkit checks the three wormable flaws by file version, because later updates replace the original KBs. Even fully patched, XP has years of unfixed flaws, so it should not be used on the internet.'
        Do = 'Get-XPHardeningStatus (Patches section)' },
     @{ Id = 'internet'; Title = 'Is XP safe online?'
-       Words = @('internet', 'online', 'safe', 'web browsing', 'email', 'antivirus', 'virus', 'malware', 'security essentials')
+       Words = @('internet', 'online', 'safe', 'web browsing', 'email', 'phishing')
        Text = 'XP should not be used on the open internet. It gets no security updates, its browsers cannot load most modern HTTPS sites safely, and antivirus makers dropped it years ago (Microsoft Security Essentials stopped updating on XP in 2015). Use it offline, on a host-only or isolated VM network, or behind a router with no port forwards, and copy files in from a modern PC that has scanned them first.'
        Do = 'Keep it off untrusted networks; Invoke-XPSecurityCheck after any change' },
+    @{ Id = 'threats'; Title = 'Which threats this PC is exposed to'
+       Words = @('threat', 'threats', 'exposed', 'exposure', 'prone', 'ransomware', 'worm', 'worms', 'botnet', 'botnets', 'protected')
+       Text = 'Get-ThreatExposureXP (menu option V) rates this PC against the attacks that still hit XP: WannaCry/EternalBlue and Conficker (network worms through SMB), BlueKeep (Remote Desktop), USB worms (AutoRun), password guessing by botnets, password theft (LM hashes, NTLMv1, pass-the-hash), and web/email attacks such as drive-by downloads and ransomware. Each gets Protected, Partly or Exposed from the patches and settings it depends on. Limits XP itself cannot fix, like its out-of-date browsers, are shown as Info so the fixable items stand out.'
+       Do = 'Get-ThreatExposureXP, or menu option V' },
+    @{ Id = 'malware'; Title = 'Signs of malware'
+       Words = @('virus', 'viruses', 'malware', 'infected', 'infection', 'trojan', 'hijack', 'userinit', 'appinit', 'image file execution', 'debugger', 'hosts file', 'startup', 'run key', 'recycler')
+       Text = 'Find-MalwareIndicatorXP is not an antivirus; it checks where XP malware starts and hides: Run keys and Startup folders, Winlogon Shell/Userinit, AppInit_DLLs, Image File Execution Options Debugger hijacks (used to block Task Manager or antivirus), services and running programs launched from Temp or the Recycle Bin, a hosts file that redirects update or antivirus sites, autorun.inf files on drives, and program files hidden in RECYCLER. It hashes every program it looks at so you can check them on VirusTotal.'
+       Do = 'Find-MalwareIndicatorXP -ExportPath C:\hashes.csv, or menu option V' },
+    @{ Id = 'virustotal'; Title = 'Checking files with VirusTotal'
+       Words = @('virustotal', 'virus total', 'sha-256', 'sha256', 'hash', 'scan a file', 'scan files', 'check a file', 'check files', 'hashes')
+       Text = 'VirusTotal runs a file past 70+ antivirus engines. You do not have to upload anything: search its SHA-256 hash and it shows the result if anyone has submitted that exact file before. Menu option V and Invoke-XPSecurityCheck save Hashes_<time>.csv in My Documents\SecurityChecks with a VirusTotal link for each program; open the CSV on a modern PC (XP cannot load the site). An unknown hash only means nobody has submitted it, not that it is safe.'
+       Do = 'Open Hashes_<time>.csv on a modern PC and click the links' },
+    @{ Id = 'antivirus'; Title = 'Antivirus on XP'
+       Words = @('antivirus', 'anti-virus', 'security essentials', 'defender', 'security center', 'definitions')
+       Text = 'Most antivirus makers stopped supporting XP years ago, and Microsoft Security Essentials stopped updating on XP in 2015. The toolkit reads XP''s Security Center to see whether an antivirus is registered, on and up to date. Without one, the safer habits are: keep XP off the internet, check files on a modern PC (or by hash on VirusTotal) before copying them in, and keep AutoRun off.'
+       Do = 'Find-MalwareIndicatorXP (Antivirus section)' },
     @{ Id = 'apipa'; Title = 'APIPA (169.254.x.x) and DHCP'
        Words = @('apipa', '169.254', 'dhcp', 'ipconfig', 'no ip')
        Text = 'An address starting with 169.254 (APIPA) means the adapter asked for an address by DHCP, got no answer, and picked one itself, so it can only talk to other APIPA devices. Check the cable or Wi-Fi, then run ipconfig /release and ipconfig /renew. In a VMware VM, check the VM''s network setting (NAT, bridged or host-only) and that the VMware DHCP service is running on the host.'
@@ -3026,6 +3049,563 @@ Set-Alias -Name xpai -Value Invoke-XPAssistant
 
 #endregion
 
+#region Threat check (0.5.0)
+
+function Get-FileSha256 {
+    # SHA-256 of a file as lowercase hex, or '' if it cannot be read.
+    param([string]$Path)
+    $fs = $null
+    try {
+        $fs = New-Object System.IO.FileStream -ArgumentList $Path, ([System.IO.FileMode]::Open), ([System.IO.FileAccess]::Read), ([System.IO.FileShare]::ReadWrite)
+        $sha = New-Object System.Security.Cryptography.SHA256Managed
+        $bytes = $sha.ComputeHash($fs)
+        return ([BitConverter]::ToString($bytes) -replace '-', '').ToLower()
+    } catch {
+        return ''
+    } finally {
+        if ($fs) { $fs.Close() }
+    }
+}
+
+function Get-CommandPath {
+    # The program path at the start of a command line such as
+    #   "C:\Program Files\App\app.exe" /min   or   C:\WINDOWS\x.exe -k netsvcs
+    param([string]$Command)
+    $c = [Environment]::ExpandEnvironmentVariables([string]$Command).Trim()
+    if (-not $c) { return '' }
+    $p = ''
+    if ($c.StartsWith('"')) {
+        $end = $c.IndexOf('"', 1)
+        if ($end -gt 1) { $p = $c.Substring(1, $end - 1) } else { $p = $c.Trim('"') }
+    } elseif ($c -match '^(.+?\.(exe|com|bat|cmd|scr|pif|vbs|vbe|js|jse|wsf|hta|dll|cpl))(\s|,|$)') {
+        $p = $matches[1]
+    } else {
+        $p = ($c -split '\s+')[0]
+    }
+    if ($p.StartsWith('\??\')) { $p = $p.Substring(4) }
+    if ($p -match '^\\SystemRoot\\') { $p = $env:windir + $p.Substring(11) }
+    if ($p -match '^(?i)system32\\') { $p = $env:windir + '\' + $p }
+    if (($p -notmatch '\\') -and $p) {
+        $sys = $env:windir + '\system32\' + $p
+        if (Test-Path -LiteralPath $sys) { $p = $sys }
+    }
+    return $p
+}
+
+function Get-SuspiciousReason {
+    # Why a program path looks like malware's favorite hiding places, or ''.
+    param([string]$Path, [string]$Command)
+    $p = ([string]$Path).ToLower()
+    $c = ([string]$Command).ToLower()
+    $why = @()
+    if (($p -match '\\(temp|tmp)\\') -or ($p -match '\\local settings\\temp\\')) { $why += 'runs from a Temp folder' }
+    if ($p -match '\\recycler\\|\\\$recycle\.bin\\|\\system volume information\\') { $why += 'runs from the Recycle Bin or System Volume Information' }
+    if ($p -match '\\application data\\[^\\]+\.(exe|scr|com|pif|dll)$') { $why += 'program sits directly in Application Data' }
+    if ($p -match '\.(jpg|jpeg|gif|png|bmp|pdf|doc|docx|xls|txt|mp3|avi|zip)\.(exe|scr|com|pif|bat|cmd|vbs|js)$') { $why += 'double file extension' }
+    if ($p -match '\.(scr|pif)$') { $why += 'screen saver or PIF file run as a program' }
+    if ($c -match 'mshta|https?://|regsvr32.+/i:') { $why += 'runs script or web content' }
+    return ($why -join '; ')
+}
+
+function Get-ShortcutTarget {
+    # Target of a .lnk file, via the WScript.Shell COM object that ships with XP.
+    param([string]$Path)
+    try {
+        $sh = New-Object -ComObject WScript.Shell
+        return [string]$sh.CreateShortcut($Path).TargetPath
+    } catch {
+        return ''
+    }
+}
+
+function Get-FileList {
+    # Files under a folder (hidden ones too) with given extensions, capped so
+    # a huge Temp folder cannot stall PS 2.0. Wrapped so tests can stand in.
+    param([string]$Path, [string[]]$Extension, [switch]$Recurse, [int]$Max = 500)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $n = 0
+    foreach ($f in @(Get-ChildItem -LiteralPath $Path -Force -Recurse:$Recurse -ErrorAction SilentlyContinue)) {
+        if ($f.PSIsContainer) { continue }
+        if ($Extension -and (-not ($Extension -contains ([string]$f.Extension).ToLower()))) { continue }
+        $f
+        $n++
+        if ($n -ge $Max) { break }
+    }
+}
+
+function Get-HostsEntry {
+    # Active lines of the hosts file as objects with Address and Name.
+    $path = $env:windir + '\system32\drivers\etc\hosts'
+    if (-not (Test-Path -LiteralPath $path)) { return }
+    foreach ($line in @(Read-SharedTextFile -Path $path)) {
+        $t = ([string]$line) -replace '#.*$', ''
+        $t = $t.Trim()
+        if (-not $t) { continue }
+        $parts = @($t -split '\s+')
+        for ($i = 1; $i -lt $parts.Length; $i++) {
+            New-Object PSObject -Property @{ Address = $parts[0]; Name = $parts[$i].ToLower() }
+        }
+    }
+}
+
+function Get-AntivirusStatus {
+    # Antivirus products registered with XP's Security Center (SP2 and later).
+    $products = @()
+    try { $products = @(Get-WmiObject -Namespace 'root\SecurityCenter' -Class AntiVirusProduct -ErrorAction SilentlyContinue | Where-Object { $_ }) } catch { }
+    $products |
+        ForEach-Object {
+            New-Object PSObject -Property @{
+                Name = [string]$_.displayName
+                OnAccess = [bool]$_.onAccessScanningEnabled
+                UpToDate = [bool]$_.productUpToDate
+            }
+        }
+}
+
+function New-ThreatRating {
+    param([string]$Threat, [string]$Rating, [string]$Why, [string]$Fix, [bool]$Inherent)
+    New-Object PSObject -Property @{ Threat = $Threat; Rating = $Rating; Why = $Why; Fix = $Fix; Inherent = $Inherent }
+}
+
+function Test-FileAtLeast {
+    # $true / $false comparing a system32 file's version to a minimum, or
+    # $null when the file or version cannot be read.
+    param([string]$File, [string]$Min)
+    $v = Get-FileVersionObject -Path ($env:windir + '\system32\' + $File)
+    if (-not $v) { return $null }
+    return ($v -ge (New-Object System.Version -ArgumentList $Min))
+}
+
+function Find-MalwareIndicatorXP {
+<#
+.SYNOPSIS
+    Looks for signs of malware in the places it hides on Windows XP.
+.DESCRIPTION
+    Not an antivirus: it has no virus signatures. It checks the places
+    malware uses to start and hide, and flags anything that looks wrong:
+      - startup entries (Run/RunOnce keys and Startup folders)
+      - Winlogon Shell and Userinit hijacks, AppInit_DLLs
+      - Image File Execution Options "Debugger" hijacks (used to block
+        antivirus and Task Manager)
+      - services and running programs started from Temp, the Recycle Bin
+        or straight from Application Data
+      - a hosts file that blocks or redirects security and update sites
+      - autorun.inf files on fixed and removable drives
+      - scheduled tasks that run from those places
+      - recent program files in Temp folders and the Recycle Bin
+      - whether an antivirus is registered and up to date
+    Every program it looks at gets a SHA-256 hash; -ExportPath saves them
+    with a VirusTotal link, so you can check them from a modern PC without
+    copying the files off. Changes nothing.
+.PARAMETER Days
+    How recent a file in Temp must be to be listed. Default 30.
+.PARAMETER ExportPath
+    CSV of every program checked, with SHA-256 and a VirusTotal link.
+.PARAMETER PassThru
+    Also return the items and findings as an object.
+.EXAMPLE
+    Find-MalwareIndicatorXP -ExportPath C:\hashes.csv
+#>
+    [CmdletBinding()]
+    param(
+        [ValidateRange(1, 3650)][int]$Days = 30,
+        [string]$ExportPath,
+        [switch]$PassThru
+    )
+
+    $findings = @()
+    $items = @()
+    $progExt = @('.exe', '.scr', '.pif', '.com', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.hta', '.bat', '.cmd')
+
+    # ---- startup entries --------------------------------------------------
+    Write-Section 'Programs that start automatically'
+    $runKeys = @(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce',
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run',
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\Run'
+    )
+    foreach ($key in $runKeys) {
+        $props = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+        if (-not $props) { continue }
+        foreach ($pr in @($props.PSObject.Properties)) {
+            if ($pr.Name -like 'PS*') { continue }
+            $cmd = [string]$pr.Value
+            $items += New-Object PSObject -Property @{ Where = ($key -replace '^HK(LM|CU):\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\', 'HK$1 ' -replace '^HK(LM|CU):\\Software\\Microsoft\\Windows\\CurrentVersion\\', 'HK$1 '); Item = $pr.Name; Command = $cmd; Path = (Get-CommandPath $cmd) }
+        }
+    }
+    $startupDirs = @([Environment]::GetFolderPath('Startup'))
+    if ($env:ALLUSERSPROFILE) { $startupDirs += ($env:ALLUSERSPROFILE + '\Start Menu\Programs\Startup') }
+    foreach ($dir in $startupDirs) {
+        if (-not $dir) { continue }
+        foreach ($f in @(Get-FileList -Path $dir)) {
+            if ($f.Name -eq 'desktop.ini') { continue }
+            $target = [string]$f.FullName
+            if ($f.Extension -eq '.lnk') { $t = Get-ShortcutTarget $f.FullName; if ($t) { $target = $t } }
+            $items += New-Object PSObject -Property @{ Where = 'Startup folder'; Item = $f.Name; Command = $target; Path = $target }
+        }
+    }
+
+    # ---- Winlogon, AppInit_DLLs, IFEO ---------------------------------------
+    $wl = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -ErrorAction SilentlyContinue
+    if ($wl) {
+        $shell = ([string]$wl.Shell).Trim()
+        if ($shell -and ($shell -notmatch '^(?i)explorer\.exe$')) {
+            $findings += New-Finding -Area 'Malware' -Level 'Risk' -Message ('Winlogon Shell is "{0}" instead of Explorer.exe: a program is replacing or riding along with the desktop.' -f $shell) -Fix 'reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v Shell /t REG_SZ /d Explorer.exe /f, then scan the named file'
+            $items += New-Object PSObject -Property @{ Where = 'Winlogon Shell'; Item = 'Shell'; Command = $shell; Path = (Get-CommandPath $shell) }
+        }
+        $userinit = @(([string]$wl.Userinit).Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $extra = @($userinit | Where-Object { $_ -notmatch '(?i)\\system32\\userinit\.exe$' -and $_ -notmatch '^(?i)userinit\.exe$' })
+        foreach ($u in $extra) {
+            $findings += New-Finding -Area 'Malware' -Level 'Risk' -Message ('Winlogon Userinit also starts "{0}" at every logon (a classic malware trick).' -f $u) -Fix ('Set Userinit back to {0}\system32\userinit.exe, and scan the extra file' -f $env:windir)
+            $items += New-Object PSObject -Property @{ Where = 'Winlogon Userinit'; Item = 'Userinit'; Command = $u; Path = (Get-CommandPath $u) }
+        }
+    }
+    $win = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows' -ErrorAction SilentlyContinue
+    if ($win -and ([string]$win.AppInit_DLLs).Trim()) {
+        $dlls = ([string]$win.AppInit_DLLs).Trim()
+        $findings += New-Finding -Area 'Malware' -Level 'Warn' -Message ('AppInit_DLLs loads "{0}" into every program. A few old drivers use it; malware often does.' -f $dlls) -Fix 'Look up the DLL; if you do not recognize it, clear AppInit_DLLs and scan the file'
+        foreach ($d in @($dlls -split '[,\s]+' | Where-Object { $_ })) {
+            $items += New-Object PSObject -Property @{ Where = 'AppInit_DLLs'; Item = $d; Command = $d; Path = (Get-CommandPath $d) }
+        }
+    }
+    $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
+    foreach ($k in @(Get-ChildItem -Path $ifeo -ErrorAction SilentlyContinue)) {
+        if (-not $k) { continue }
+        $name = [string]$k.PSChildName
+        $p = Get-ItemProperty -Path ($ifeo + '\' + $name) -ErrorAction SilentlyContinue
+        if ((-not $p) -or (-not $p.Debugger)) { continue }
+        # XP ships with this sample key (Debugger = "ntsd -d").
+        if ($name -eq 'Your Image File Name Here without a path') { continue }
+        $dbg = [string]$p.Debugger
+        if ($dbg -match '(?i)procexp') {
+            $findings += New-Finding -Area 'Malware' -Level 'Info' -Message ('{0} is redirected to Process Explorer ("{1}"), which is normal if you chose to replace Task Manager.' -f $name, $dbg)
+        } else {
+            $level = 'Warn'
+            if ($name -match '^(?i)(taskmgr|regedit|msconfig|cmd|mrt|avp|avgui|mbam|hijackthis|rstrui)\.exe$') { $level = 'Risk' }
+            $findings += New-Finding -Area 'Malware' -Level $level -Message ('Starting {0} actually runs "{1}" (Image File Execution Options Debugger). Malware uses this to block security tools.' -f $name, $dbg) -Fix ('reg delete "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\{0}" /v Debugger /f' -f $name)
+            $items += New-Object PSObject -Property @{ Where = 'IFEO Debugger'; Item = $name; Command = $dbg; Path = (Get-CommandPath $dbg) }
+        }
+    }
+
+    # ---- services and running programs --------------------------------------
+    foreach ($svc in @(Get-WmiObject -Class Win32_Service -ErrorAction SilentlyContinue)) {
+        if (-not $svc) { continue }
+        $path = Get-CommandPath ([string]$svc.PathName)
+        $why = Get-SuspiciousReason -Path $path -Command ([string]$svc.PathName)
+        if ($why) {
+            $items += New-Object PSObject -Property @{ Where = 'Service'; Item = $svc.Name; Command = [string]$svc.PathName; Path = $path }
+        }
+    }
+    foreach ($proc in @(Get-WmiObject -Class Win32_Process -ErrorAction SilentlyContinue)) {
+        if ((-not $proc) -or (-not $proc.ExecutablePath)) { continue }
+        $why = Get-SuspiciousReason -Path ([string]$proc.ExecutablePath) -Command ''
+        if ($why) {
+            $items += New-Object PSObject -Property @{ Where = 'Running now'; Item = ('{0} (PID {1})' -f $proc.Name, $proc.ProcessId); Command = [string]$proc.ExecutablePath; Path = [string]$proc.ExecutablePath }
+        }
+    }
+
+    # ---- scheduled tasks (XP: schtasks CSV, English headers) -----------------
+    $taskLines = @()
+    try { $taskLines = @(& schtasks.exe /query /fo csv /v 2>$null | Where-Object { $_ -and ([string]$_).StartsWith('"') }) } catch { }
+    if ($taskLines.Length -gt 1) {
+        $header = $taskLines[0]
+        $rows = @(@($header) + @($taskLines | Select-Object -Skip 1 | Where-Object { $_ -ne $header }) | ConvertFrom-Csv)
+        foreach ($t in $rows) {
+            if (-not $t.PSObject.Properties['Task To Run']) { continue }
+            $run = [string]$t.'Task To Run'
+            $path = Get-CommandPath $run
+            if (Get-SuspiciousReason -Path $path -Command $run) {
+                $items += New-Object PSObject -Property @{ Where = 'Scheduled task'; Item = [string]$t.TaskName; Command = $run; Path = $path }
+            }
+        }
+    }
+
+    # ---- judge everything collected -----------------------------------------
+    foreach ($it in $items) {
+        $why = Get-SuspiciousReason -Path $it.Path -Command $it.Command
+        $exists = ($it.Path -and (Test-Path -LiteralPath $it.Path))
+        $it | Add-Member -MemberType NoteProperty -Name Reason -Value $why
+        $hash = ''
+        if ($exists) { $hash = Get-FileSha256 -Path $it.Path }
+        $it | Add-Member -MemberType NoteProperty -Name SHA256 -Value $hash
+        if ($why -and (($it.Where -like 'HK*') -or ($it.Where -eq 'Startup folder'))) {
+            $findings += New-Finding -Area 'Malware' -Level 'Risk' -Message ('Starts at logon from a suspicious place: {0} = "{1}" ({2}).' -f $it.Item, $it.Command, $why) -Fix 'Check its SHA-256 on virustotal.com from a modern PC; if bad, delete the startup entry and the file'
+        } elseif ($why -and ($it.Where -eq 'Service')) {
+            $findings += New-Finding -Area 'Malware' -Level 'Risk' -Message ('Service "{0}" runs "{1}" ({2}).' -f $it.Item, $it.Path, $why) -Fix 'Check its SHA-256 on virustotal.com; if bad: sc stop <name>, sc config <name> start= disabled'
+        } elseif ($why -and ($it.Where -eq 'Running now')) {
+            $findings += New-Finding -Area 'Malware' -Level 'Warn' -Message ('Running program {0} is at "{1}" ({2}).' -f $it.Item, $it.Path, $why) -Fix 'Check its SHA-256 on virustotal.com; installers often run from Temp, malware does too'
+        } elseif ($why -and ($it.Where -eq 'Scheduled task')) {
+            $findings += New-Finding -Area 'Malware' -Level 'Warn' -Message ('Scheduled task "{0}" runs "{1}" ({2}).' -f $it.Item, $it.Command, $why) -Fix 'Check it in Control Panel > Scheduled Tasks and on virustotal.com'
+        } elseif (($it.Where -like 'HK*') -and $it.Path -and (-not $exists)) {
+            $findings += New-Finding -Area 'Malware' -Level 'Info' -Message ('Startup entry "{0}" points to a missing file: {1}' -f $it.Item, $it.Path)
+        }
+    }
+    $startups = @($items | Where-Object { ($_.Where -like 'HK*') -or ($_.Where -eq 'Startup folder') })
+    if ($startups.Length -gt 0) {
+        $cols = @(
+            @{ Label = 'Where'; Expression = { $_.Where }; Width = 22 },
+            @{ Label = 'Name'; Expression = { $_.Item }; Width = 24 },
+            @{ Label = 'Runs'; Expression = { $_.Command } }
+        )
+        Write-TableToHost -InputRows $startups -Columns $cols
+    }
+    $findings += New-Finding -Area 'Malware' -Level 'Info' -Message ('{0} startup entr(ies) checked; each program''s SHA-256 can be exported with -ExportPath to check on VirusTotal.' -f $startups.Length)
+
+    # ---- hosts file -------------------------------------------------------------
+    Write-Section 'Hosts file, autorun.inf, hiding places'
+    $hosts = @(Get-HostsEntry | Where-Object { -not (($_.Name -eq 'localhost') -and (($_.Address -eq '127.0.0.1') -or ($_.Address -eq '::1'))) })
+    $security = '(microsoft|windowsupdate|update|virustotal|avast|avg|norton|symantec|mcafee|kaspersky|eset|malwarebytes|sophos|trendmicro|f-secure|bitdefender|clamav|avira|panda|comodo|google)'
+    $hijack = @($hosts | Where-Object { $_.Name -match $security })
+    if ($hijack.Length -gt 0) {
+        $shown = (@($hijack | Select-Object -First 5 | ForEach-Object { $_.Name + ' -> ' + $_.Address })) -join ', '
+        $findings += New-Finding -Area 'Malware' -Level 'Risk' -Message ('The hosts file redirects {0} security or update site(s): {1}. Malware does this to stop updates and antivirus.' -f $hijack.Length, $shown) -Fix ('Open {0}\system32\drivers\etc\hosts in Notepad and delete those lines' -f $env:windir)
+    } elseif ($hosts.Length -gt 0) {
+        $findings += New-Finding -Area 'Malware' -Level 'Info' -Message ('The hosts file has {0} custom entr(ies) (for example {1}). Fine if you added them, e.g. an ad-block list.' -f $hosts.Length, $hosts[0].Name)
+    } else {
+        $findings += New-Finding -Area 'Malware' -Level 'OK' -Message 'The hosts file has no custom entries.'
+    }
+
+    # ---- autorun.inf on drives ----------------------------------------------
+    foreach ($disk in @(Get-WmiObject -Class Win32_LogicalDisk -ErrorAction SilentlyContinue | Where-Object { ($_.DriveType -eq 2) -or ($_.DriveType -eq 3) })) {
+        if (-not $disk) { continue }
+        $inf = [string]$disk.DeviceID + '\autorun.inf'
+        if (Test-Path -LiteralPath $inf) {
+            $open = ''
+            foreach ($line in @(Read-SharedTextFile -Path $inf)) {
+                if ([string]$line -match '^(?i)\s*(open|shellexecute|shell\\[^=]*\\command)\s*=\s*(.+)$') { $open = $matches[2].Trim(); break }
+            }
+            $level = 'Warn'
+            if ($open) { $level = 'Risk' }
+            $what = ''
+            if ($open) { $what = ' It launches "' + $open + '".' }
+            $findings += New-Finding -Area 'Malware' -Level $level -Message ('{0} has an autorun.inf.{1} USB worms leave these on every drive.' -f $disk.DeviceID, $what) -Fix ('attrib -h -s -r {0}, then delete it (and the file it launches) after checking' -f $inf)
+            if ($open) {
+                $target = [string]$disk.DeviceID + '\' + (($open -split '\s+')[0].Trim('"').TrimStart('\'))
+                $h = ''
+                if (Test-Path -LiteralPath $target) { $h = Get-FileSha256 -Path $target }
+                $items += New-Object PSObject -Property @{ Where = 'autorun.inf'; Item = $inf; Command = $open; Path = $target; Reason = 'launched by autorun.inf'; SHA256 = $h }
+            }
+        }
+    }
+
+    # ---- program files in hiding places ---------------------------------------
+    $cut = (Get-Date).AddDays(-$Days)
+    $tempDirs = @($env:TEMP, ($env:windir + '\Temp')) | Where-Object { $_ } | Sort-Object -Unique
+    $recent = @()
+    foreach ($dir in $tempDirs) {
+        $recent += @(Get-FileList -Path $dir -Extension $progExt -Recurse -Max 300 | Where-Object { $_.LastWriteTime -ge $cut })
+    }
+    if ($recent.Length -gt 0) {
+        $names = (@($recent | Sort-Object LastWriteTime -Descending | Select-Object -First 5 | ForEach-Object { $_.Name })) -join ', '
+        $findings += New-Finding -Area 'Malware' -Level 'Info' -Message ('{0} program file(s) in Temp folders from the last {1} days (installers leave these too): {2}' -f $recent.Length, $Days, $names) -Fix 'Check unfamiliar ones on virustotal.com using the exported SHA-256'
+        foreach ($f in @($recent | Select-Object -First 100)) {
+            $items += New-Object PSObject -Property @{ Where = 'Temp folder'; Item = $f.Name; Command = ''; Path = $f.FullName; Reason = ''; SHA256 = (Get-FileSha256 -Path $f.FullName) }
+        }
+    }
+    # XP's Recycle Bin renames deleted files to Dc<n>.ext; anything else that
+    # is a program inside RECYCLER was put there on purpose.
+    $sysDrive = $env:SystemDrive
+    if (-not $sysDrive) { $sysDrive = 'C:' }
+    $hidden = @(Get-FileList -Path ($sysDrive + '\RECYCLER') -Extension $progExt -Recurse -Max 200 | Where-Object { $_.Name -notmatch '^(?i)Dc\d+\.' })
+    if ($hidden.Length -gt 0) {
+        $findings += New-Finding -Area 'Malware' -Level 'Risk' -Message ('{0} program file(s) hidden in the Recycle Bin folder, not as deleted files: {1}' -f $hidden.Length, ((@($hidden | Select-Object -First 5 | ForEach-Object { $_.FullName })) -join ', ')) -Fix 'Check them on virustotal.com using the exported SHA-256, then empty the Recycle Bin'
+        foreach ($f in $hidden) {
+            $items += New-Object PSObject -Property @{ Where = 'Recycle Bin'; Item = $f.Name; Command = ''; Path = $f.FullName; Reason = 'program hidden in RECYCLER'; SHA256 = (Get-FileSha256 -Path $f.FullName) }
+        }
+    }
+
+    # ---- antivirus ------------------------------------------------------------
+    Write-Section 'Antivirus'
+    $av = @(Get-AntivirusStatus)
+    if ($av.Length -eq 0) {
+        $findings += New-Finding -Area 'Antivirus' -Level 'Info' -Message 'No antivirus is registered with Security Center. Few vendors still update XP; check files on a modern PC before copying them in.' -Fix 'Check hashes on virustotal.com; keep XP off the open internet'
+    }
+    foreach ($a in $av) {
+        if (-not $a.OnAccess) {
+            $findings += New-Finding -Area 'Antivirus' -Level 'Warn' -Message ('{0} is installed but real-time scanning is off.' -f $a.Name) -Fix 'Turn on real-time protection in its settings'
+        } elseif (-not $a.UpToDate) {
+            $findings += New-Finding -Area 'Antivirus' -Level 'Info' -Message ('{0} reports its virus definitions are out of date, so it only knows older malware.' -f $a.Name) -Fix 'Update it if the vendor still supports XP'
+        } else {
+            $findings += New-Finding -Area 'Antivirus' -Level 'OK' -Message ('{0} is on and reports up-to-date definitions.' -f $a.Name)
+        }
+    }
+
+    $bad = @($findings | Where-Object { ($_.Area -eq 'Malware') -and (($_.Level -eq 'Risk') -or ($_.Level -eq 'Warn')) })
+    if ($bad.Length -eq 0) {
+        $findings += New-Finding -Area 'Malware' -Level 'OK' -Message 'No signs of malware in the places checked. This is not a virus scan; see the hashes for that.'
+    }
+
+    $items = @($items | Select-Object Where, Item, Path, SHA256, Reason, Command)
+    if ($ExportPath) {
+        $ExportPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ExportPath)
+        $rows = @($items | Where-Object { $_.SHA256 } | Select-Object Where, Item, Path, SHA256, Reason,
+            @{ Name = 'VirusTotal'; Expression = { 'https://www.virustotal.com/gui/file/' + $_.SHA256 } })
+        $rows | Export-Csv -Path $ExportPath -NoTypeInformation
+        Write-Host ''
+        Write-Host ('  {0} program hash(es) saved to {1}' -f $rows.Length, $ExportPath) -ForegroundColor Green
+        Write-Host '  Open it on a modern PC: each VirusTotal link shows what 70+ antivirus engines say about that exact file.' -ForegroundColor DarkGray
+    }
+
+    Save-RunFindings -Name 'Find-MalwareIndicatorXP' -Findings $findings
+    if ($PassThru) { New-Object PSObject -Property @{ Items = $items; Findings = $findings } }
+}
+
+function Get-ThreatExposureXP {
+<#
+.SYNOPSIS
+    Rates this PC against the threats that still target Windows XP.
+.DESCRIPTION
+    For each threat (WannaCry/EternalBlue, Conficker, BlueKeep, USB worms,
+    password theft, password guessing, and browser/email attacks) it reads
+    the patches and settings that decide whether it could work here, and
+    rates it Protected, Partly or Exposed, with the reason and the fix.
+    Exposed threats that a setting or patch can fix are Risks; limits XP
+    itself cannot fix (old browsers, pass-the-hash) are reported as Info,
+    so they do not hide the fixable items. Changes nothing.
+.PARAMETER PassThru
+    Also return the ratings and findings as an object.
+.EXAMPLE
+    Get-ThreatExposureXP
+#>
+    [CmdletBinding()]
+    param([switch]$PassThru)
+
+    Write-Section 'What this PC is exposed to'
+    $xp = Test-IsXP32
+    $srvOk = $null; $netapiOk = $null; $termOk = $null
+    if ($xp) {
+        $netapiOk = Test-FileAtLeast -File 'netapi32.dll' -Min '5.1.2600.5694'
+        $srvOk = Test-FileAtLeast -File 'drivers\srv.sys' -Min '5.1.2600.7208'
+        $termOk = Test-FileAtLeast -File 'drivers\termdd.sys' -Min '5.1.2600.7701'
+    }
+
+    $fwOn = $false; $noExceptions = $false; $filePrintOpen = $false; $rdpExceptionOpen = $false
+    try {
+        $prof = (New-Object -ComObject HNetCfg.FwMgr).LocalPolicy.CurrentProfile
+        $fwOn = [bool]$prof.FirewallEnabled
+        $noExceptions = [bool]$prof.ExceptionsNotAllowed
+        foreach ($s in $prof.Services) {
+            if ($s.Enabled -and ($s.Type -eq 0)) { $filePrintOpen = $true }
+            if ($s.Enabled -and ($s.Type -eq 2)) { $rdpExceptionOpen = $true }
+        }
+    } catch { }
+    $exceptionsActive = ($fwOn -and (-not $noExceptions))
+
+    $netbt = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\NetBT\Parameters' -ErrorAction SilentlyContinue
+    $smbDeviceOff = ($netbt -and ($netbt.SMBDeviceEnabled -ne $null) -and ($netbt.SMBDeviceEnabled -eq 0))
+    $server = Get-Service -Name lanmanserver -ErrorAction SilentlyContinue
+    $serverOn = ($server -and ($server.Status -eq 'Running'))
+    $smbReachable = $serverOn -and ((-not $fwOn) -or ($exceptionsActive -and $filePrintOpen))
+
+    $ts = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -ErrorAction SilentlyContinue
+    $rdpOn = ($ts -and ($ts.fDenyTSConnections -ne $null) -and ($ts.fDenyTSConnections -eq 0))
+    $rdpReachable = $rdpOn -and ((-not $fwOn) -or ($exceptionsActive -and $rdpExceptionOpen))
+
+    $explorer = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' -ErrorAction SilentlyContinue
+    $autorunOff = ($explorer -and ($explorer.NoDriveTypeAutoRun -eq 255))
+
+    $lsa = Get-ItemProperty -Path $script:LsaPath -ErrorAction SilentlyContinue
+    $noLm = ($lsa -and ($lsa.NoLMHash -eq 1))
+    $ntlm2 = ($lsa -and ($lsa.LmCompatibilityLevel -ne $null) -and ([int]$lsa.LmCompatibilityLevel -ge 3))
+    $anonBlocked = ($lsa -and ($lsa.RestrictAnonymous -ge 1))
+    $policy = ConvertFrom-NetAccounts -Text (& net.exe accounts 2>&1)
+    $lockout = ($policy -and ($policy.LockoutThreshold -gt 0))
+    $guest = Get-GuestAccount
+    $guestOff = ((-not $guest) -or $guest.Disabled)
+    $av = @(Get-AntivirusStatus | Where-Object { $_.OnAccess -and $_.UpToDate })
+    $online = ((Test-Ping -Address '8.8.8.8' -TimeoutMs 1500) -ne $null) -or (Test-DnsLookup -Name 'www.microsoft.com')
+
+    $ratings = @()
+    $patchUnknown = 'Patch level not checked (not 32-bit XP SP3)'
+
+    # 1. WannaCry / EternalBlue
+    if ($srvOk -eq $null) { $ratings += New-ThreatRating 'WannaCry / EternalBlue (SMB)' 'Unknown' $patchUnknown 'Get-XPHardeningStatus' $false }
+    elseif ($srvOk -and (-not $smbReachable)) { $ratings += New-ThreatRating 'WannaCry / EternalBlue (SMB)' 'Protected' 'MS17-010 patched and SMB is not reachable from the network' '' $false }
+    elseif ($srvOk) { $ratings += New-ThreatRating 'WannaCry / EternalBlue (SMB)' 'Partly' 'MS17-010 patched, but SMB file sharing is reachable from the network' 'Set-XPHardening (or limit sharing to the local subnet)' $false }
+    elseif (-not $smbReachable) { $ratings += New-ThreatRating 'WannaCry / EternalBlue (SMB)' 'Partly' 'NOT patched (srv.sys), but the firewall/settings block SMB right now' 'KB4012598 from the Microsoft Update Catalog' $false }
+    else { $ratings += New-ThreatRating 'WannaCry / EternalBlue (SMB)' 'Exposed' 'NOT patched and SMB is reachable: one infected PC on this network can encrypt this one' 'KB4012598 now, and Set-XPHardening' $false }
+
+    # 2. Conficker
+    if ($netapiOk -eq $null) { $ratings += New-ThreatRating 'Conficker (network + USB)' 'Unknown' $patchUnknown 'Get-XPHardeningStatus' $false }
+    elseif ($netapiOk -and $autorunOff -and (-not $smbReachable)) { $ratings += New-ThreatRating 'Conficker (network + USB)' 'Protected' 'MS08-067 patched, SMB not reachable, AutoRun off' '' $false }
+    elseif ((-not $netapiOk) -and $smbReachable) { $ratings += New-ThreatRating 'Conficker (network + USB)' 'Exposed' 'MS08-067 NOT patched and SMB is reachable' 'Legacy Update, then Set-XPHardening' $false }
+    else {
+        $why = @()
+        if (-not $netapiOk) { $why += 'MS08-067 not patched' }
+        if (-not $autorunOff) { $why += 'AutoRun is on (USB spread)' }
+        if ($smbReachable) { $why += 'SMB reachable' }
+        $ratings += New-ThreatRating 'Conficker (network + USB)' 'Partly' ($why -join '; ') 'Legacy Update and Set-XPHardening' $false
+    }
+
+    # 3. BlueKeep
+    if (-not $rdpOn) { $ratings += New-ThreatRating 'BlueKeep (Remote Desktop)' 'Protected' 'Remote Desktop is turned off' '' $false }
+    elseif ($termOk -eq $null) { $ratings += New-ThreatRating 'BlueKeep (Remote Desktop)' 'Unknown' ('Remote Desktop is on; ' + $patchUnknown) 'Get-XPHardeningStatus' $false }
+    elseif ($termOk -and (-not $rdpReachable)) { $ratings += New-ThreatRating 'BlueKeep (Remote Desktop)' 'Protected' 'Patched, and the firewall blocks Remote Desktop' '' $false }
+    elseif ($termOk) { $ratings += New-ThreatRating 'BlueKeep (Remote Desktop)' 'Partly' 'Patched, but Remote Desktop is open to the network' 'Allow it from the local subnet only, or Set-XPHardening' $false }
+    elseif (-not $rdpReachable) { $ratings += New-ThreatRating 'BlueKeep (Remote Desktop)' 'Partly' 'NOT patched, but the firewall blocks Remote Desktop right now' 'KB4500331 from the Microsoft Update Catalog' $false }
+    else { $ratings += New-ThreatRating 'BlueKeep (Remote Desktop)' 'Exposed' 'NOT patched and Remote Desktop is open to the network' 'KB4500331 now, and Set-XPHardening' $false }
+
+    # 4. USB worms
+    if ($autorunOff) { $ratings += New-ThreatRating 'USB worms (AutoRun)' 'Protected' 'AutoRun is off for all drive types (shortcut-file flaws still need Legacy Update)' '' $false }
+    else { $ratings += New-ThreatRating 'USB worms (AutoRun)' 'Exposed' 'AutoRun can start programs from a plugged-in drive' 'Set-XPHardening (AutoRun step)' $false }
+
+    # 5. Password guessing / botnets
+    $gaps = @()
+    if (-not $fwOn) { $gaps += 'firewall off' }
+    if (-not $guestOff) { $gaps += 'Guest enabled' }
+    if (-not $lockout) { $gaps += 'no account lockout' }
+    if (-not $anonBlocked) { $gaps += 'anonymous listing allowed' }
+    if ($gaps.Length -eq 0) { $ratings += New-ThreatRating 'Password guessing (botnets)' 'Protected' 'Firewall on, Guest off, lockout on, anonymous listing blocked' '' $false }
+    elseif ((-not $fwOn) -or (-not $guestOff)) { $ratings += New-ThreatRating 'Password guessing (botnets)' 'Exposed' ($gaps -join '; ') 'Set-XPHardening' $false }
+    else { $ratings += New-ThreatRating 'Password guessing (botnets)' 'Partly' ($gaps -join '; ') 'Set-XPHardening' $false }
+
+    # 6. Password theft (inherent limit)
+    if ($noLm -and $ntlm2) { $ratings += New-ThreatRating 'Password theft (hashes)' 'Partly' 'No LM hashes and NTLMv2 only; XP still cannot stop pass-the-hash once malware is on the PC' 'Use a limited account day to day' $true }
+    else {
+        $why = @()
+        if (-not $noLm) { $why += 'LM hashes stored (crackable in seconds)' }
+        if (-not $ntlm2) { $why += 'sends weak NTLMv1/LM logons' }
+        $ratings += New-ThreatRating 'Password theft (hashes)' 'Exposed' ($why -join '; ') 'Set-XPHardening (NoLMHash, NTLMv2), then change passwords' $false
+    }
+
+    # 7. Browser / email (inherent limit)
+    $avText = 'no up-to-date antivirus'
+    if ($av.Length -gt 0) { $avText = 'antivirus: ' + (($av | ForEach-Object { $_.Name }) -join ', ') }
+    if ($online) { $ratings += New-ThreatRating 'Web and email (ransomware, phishing)' 'Exposed' ('This PC reaches the internet; XP''s browsers and mail programs get no security fixes; ' + $avText) 'Do not browse or open email on XP; use a modern PC, or cut XP off the internet' $true }
+    else { $ratings += New-ThreatRating 'Web and email (ransomware, phishing)' 'Partly' ('No internet right now; files copied in can still carry malware; ' + $avText) 'Check files on a modern PC (or VirusTotal) before copying them in' $true }
+
+    $ratings = @($ratings | Select-Object Threat, Rating, Why, Fix, Inherent)
+    $cols = @(
+        @{ Label = 'Threat'; Expression = { $_.Threat }; Width = 37 },
+        @{ Label = 'Rating'; Expression = { $_.Rating }; Width = 9 },
+        @{ Label = 'Why'; Expression = { $_.Why } }
+    )
+    Write-TableToHost -InputRows $ratings -Columns $cols
+
+    $findings = @()
+    foreach ($r in $ratings) {
+        $level = 'OK'
+        if ($r.Rating -eq 'Exposed') { if ($r.Inherent) { $level = 'Info' } else { $level = 'Risk' } }
+        elseif ($r.Rating -eq 'Partly') { if ($r.Inherent) { $level = 'Info' } else { $level = 'Warn' } }
+        elseif ($r.Rating -eq 'Unknown') { $level = 'Info' }
+        $fix = $r.Fix
+        if (-not $fix) { $fix = $null }
+        $findings += New-Finding -Area 'Threats' -Level $level -Message ('{0}: {1}. {2}.' -f $r.Threat, $r.Rating.ToUpper(), $r.Why) -Fix $fix
+    }
+    $exposed = @($ratings | Where-Object { $_.Rating -eq 'Exposed' }).Length
+    $protected = @($ratings | Where-Object { $_.Rating -eq 'Protected' }).Length
+    Write-Host ''
+    Write-Host ('  {0} of {1} threats blocked, {2} exposed. Ratings come from this PC''s patches and settings, not from scanning files.' -f $protected, $ratings.Length, $exposed) -ForegroundColor DarkGray
+
+    Save-RunFindings -Name 'Get-ThreatExposureXP' -Findings $findings
+    if ($PassThru) { New-Object PSObject -Property @{ Ratings = $ratings; Findings = $findings } }
+}
+
+#endregion
+
 #region Menu (0.4.0)
 
 function Set-ConsoleWidth {
@@ -3136,6 +3716,7 @@ function Show-ToolkitMenu {
     Write-Host '    7  Router ports and UPnP'
     Write-Host '    8  Network adapters and connectivity'
     Write-Host '    9  USB storage history'
+    Write-Host '    V  Virus and threat check (what this PC is exposed to, signs of malware)'
     Write-Host '  Fix' -ForegroundColor White
     Write-Host '    H  Harden this PC (shows a preview first)'
     Write-Host '  Help' -ForegroundColor White
@@ -3183,6 +3764,12 @@ function Start-NetSecToolkitXP {
                 '7' { Test-RouterExposureXP }
                 '8' { Get-NetAdapterHealthXP }
                 '9' { Get-USBHistoryXP }
+                'V' {
+                    Get-ThreatExposureXP
+                    $dir = Get-DefaultReportDir
+                    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+                    Find-MalwareIndicatorXP -ExportPath (Join-Path $dir ('Hashes_' + (Get-Date -Format 'yyyy-MM-dd_HHmm') + '.csv'))
+                }
                 'H' { Invoke-MenuHardening }
                 'A' { Invoke-XPAssistant; $wait = $false }
                 'R' { Open-LastReport }
@@ -3209,4 +3796,4 @@ function Start-NetSecToolkitXP {
 Export-ModuleMember -Function Get-NetAdapterHealthXP, Get-FirewallAuditXP, Find-NetworkDeviceXP,
     Set-XPHardening, Get-XPHardeningStatus, Get-AccountAuditXP, Get-FirewallLogXP,
     Test-RouterExposureXP, Get-USBHistoryXP, Invoke-XPSecurityCheck, Invoke-XPAssistant,
-    Set-XPAssistantConfig, Start-NetSecToolkitXP -Alias xpai
+    Set-XPAssistantConfig, Start-NetSecToolkitXP, Get-ThreatExposureXP, Find-MalwareIndicatorXP -Alias xpai

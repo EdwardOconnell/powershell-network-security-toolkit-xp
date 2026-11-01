@@ -1,10 +1,10 @@
 # NetSecToolkitXP
 
-![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-lightgrey)
+![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.5.0](https://img.shields.io/badge/version-0.5.0-lightgrey)
 
 The Windows XP SP3 / PowerShell 2.0 edition of my [PowerShell Network Security Toolkit](https://github.com/EdwardOconnell/powershell-network-security-toolkit).
 
-The main toolkit targets PowerShell 7 and relies on the `Net*` cmdlets (`Get-NetAdapter`, `Get-NetFirewallRule`), which only exist on Windows 8 and later. This edition rebuilds the core checks with WMI, COM and `netsh firewall` so they run on XP. It also adds a one-command hardening baseline based on locking down a real XP laptop, an all-in-one daily check, and a security assistant that explains the findings and says what to fix first.
+The main toolkit targets PowerShell 7 and relies on the `Net*` cmdlets (`Get-NetAdapter`, `Get-NetFirewallRule`), which only exist on Windows 8 and later. This edition rebuilds the core checks with WMI, COM and `netsh firewall` so they run on XP. It also adds a one-command hardening baseline based on locking down a real XP laptop, an all-in-one daily check, a threat check that shows which current attacks the PC is exposed to and looks for signs of malware, and a security assistant that explains the findings and says what to fix first.
 
 **Easiest way to run it:** download the release zip, copy it to the XP machine, extract it and double-click **`NetSecToolkitXP.exe`**. A numbered menu opens, with no execution policy changes, `Import-Module` or typing needed. See [Run it with NetSecToolkitXP.exe](#run-it-with-netsectoolkitxpexe).
 
@@ -23,6 +23,8 @@ Everything is read-only except `Set-XPHardening` (which supports `-WhatIf`) and 
 | `Get-FirewallLogXP` | Summarizes `pfirewall.log`: how much was blocked, which addresses tried to reach this PC, likely port scans, and blocked traffic from the internet or from outside the subnet. |
 | `Test-RouterExposureXP` | Checks 16 common TCP ports on the router from inside the network and whether it answers UPnP discovery. |
 | `Get-USBHistoryXP` | Every USB storage device ever connected (model and serial, from `USBSTOR`), and whether USB storage is blocked. |
+| `Get-ThreatExposureXP` | Rates the PC **Protected / Partly / Exposed** against the attacks that still hit XP (WannaCry, Conficker, BlueKeep, USB worms, password guessing and theft, web/email ransomware), from its real patches and settings. |
+| `Find-MalwareIndicatorXP` | Looks for signs of infection where XP malware hides (startup entries, Winlogon and IFEO hijacks, AppInit_DLLs, Temp/RECYCLER programs, hosts file, autorun.inf, scheduled tasks), checks the antivirus, and exports a SHA-256 + VirusTotal link for every program it looked at. |
 | `Invoke-XPSecurityCheck` | Runs all of the checks above in one go, flags devices and USB drives that are new since the last run, and saves a transcript, an HTML report and a snapshot. |
 | `Invoke-XPAssistant` (alias `xpai`) | Security assistant: explains findings, answers questions and builds a fix order. Works offline; can also ask Claude through a relay on a modern PC. See [Security assistant](#security-assistant). |
 | `Set-XPAssistantConfig` | Saves the relay address and token for the assistant's Claude mode. |
@@ -40,11 +42,13 @@ The repo also has `relay\Start-ClaudeRelay.ps1`, which runs on the modern host P
 
 ## Run it with NetSecToolkitXP.exe
 
-1. Download `NetSecToolkitXP-0.4.0.zip` from the [Releases](../../releases) page (or the repo zip), and copy it to the XP machine.
+1. Download `NetSecToolkitXP-0.5.0.zip` from the [Releases](../../releases) page (or the repo zip), and copy it to the XP machine.
 2. Extract it. Keep `NetSecToolkitXP.exe` and the `NetSecToolkitXP` folder together.
 3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for option H.
 
 ![NetSecToolkitXP.exe menu running on Windows XP SP3](docs/images/exe-menu.png)
+
+*(Screenshot from 0.4.0. Version 0.5.0 adds **V  Virus and threat check** under Checks.)*
  NetSecToolkitXP 0.4.0 - Windows XP security toolkit
  Computer: XPVM   User: Edward   Administrator: yes
   Checks (change nothing)
@@ -207,6 +211,45 @@ Invoke-XPSecurityCheck -NoRouter -NoReport
 ```
 
 It changes no settings.
+
+### Threat check: `Get-ThreatExposureXP` and `Find-MalwareIndicatorXP`
+
+Menu option **V** runs both, and `Invoke-XPSecurityCheck` (option 1) includes them.
+
+**It is not an antivirus.** Real virus scanning needs millions of signatures updated daily, and XP can't download them (it has no TLS 1.2). Instead, it answers two questions honestly.
+
+**1. What is this PC exposed to?** `Get-ThreatExposureXP` reads the patches and settings each attack depends on:
+
+| Threat | Protected when |
+|---|---|
+| WannaCry / EternalBlue (SMB ransomware worms) | MS17-010 patched (`srv.sys`) and SMB not reachable |
+| Conficker (network + USB) | MS08-067 patched (`netapi32.dll`), SMB not reachable, AutoRun off |
+| BlueKeep (Remote Desktop) | Remote Desktop off, or patched (`termdd.sys`) and blocked by the firewall |
+| USB worms | AutoRun off for all drive types |
+| Password guessing (botnets) | Firewall on, Guest off, account lockout on, anonymous listing blocked |
+| Password theft (hashes) | No LM hashes, NTLMv2 only. XP can't stop pass-the-hash, so the best rating is Partly. |
+| Web and email (ransomware, phishing) | Not possible while XP is online: its browsers and mail programs get no fixes |
+
+Exposed threats that a patch or setting can fix count as **Risks**. The two that XP itself can't fix are **Info**, so they don't bury the fixable items.
+
+**2. Are there signs of infection?** `Find-MalwareIndicatorXP` checks the places XP malware uses to start and hide:
+
+- Run/RunOnce keys and Startup folders
+- Winlogon `Shell`/`Userinit`, `AppInit_DLLs`, and Image File Execution Options `Debugger` hijacks (used to block Task Manager or antivirus)
+- services, running programs and scheduled tasks started from Temp, the Recycle Bin (`RECYCLER`) or straight from Application Data
+- a hosts file that redirects update or antivirus sites
+- `autorun.inf` on fixed and removable drives
+- program files in Temp, and ones hidden in `RECYCLER` (XP renames real deleted files to `Dc<n>.ext`, so those are left alone)
+- whether an antivirus is registered with Security Center, on, and up to date
+
+It knows XP's own defaults, like the sample IFEO key that runs `ntsd -d` and Process Explorer replacing Task Manager.
+
+**Check the files with VirusTotal:** every program it looks at gets a SHA-256 hash. `-ExportPath` (and options V and 1, as `My Documents\SecurityChecks\Hashes_<time>.csv`) saves them with a VirusTotal link. Open the CSV on a modern PC and click a link to see what 70+ antivirus engines say about that exact file, without copying it off the VM.
+
+```powershell
+Get-ThreatExposureXP
+Find-MalwareIndicatorXP -ExportPath C:\hashes.csv
+```
 
 ### `Set-XPHardening`
 
@@ -378,6 +421,7 @@ All real-machine testing so far has been on one VM:
 | 0.3.0 | `Invoke-XPSecurityCheck`, on the hardened VM | Ran end to end and saved its transcript, HTML report and snapshot; three false findings, fixed in 0.3.1. Also the first VM run of the 0.2.3 fixes (NetBIOS checked on every interface, Guest found by its SID) |
 | 0.4.0 | `NetSecToolkitXP.exe`, double-clicked on the VM | Opened the menu (window title, version, administrator detected) and option H ran the hardening |
 | 0.3.1 | Not yet on its own | Its changes are included in 0.4.0 |
+| 0.5.0 | Not yet | Threat check tested on mocks (clean, hardened, infected) |
 
 ### 0.2.2: hardening run
 
@@ -450,6 +494,7 @@ Also reported, as Info:
 - [x] 0.4.0: double-click `NetSecToolkitXP.exe` on XP: the menu opens, and option H (hardening) ran.
 - [ ] 0.4.0: after option H and a reboot, run option 1 (full check). Expected result: 0 risks, 0 warnings.
 - [ ] 0.4.0: option A (assistant) from the menu.
+- [ ] 0.5.0: option V (threat check), and open `Hashes_<time>.csv` on the host to try the VirusTotal links.
 - [ ] Claude mode against the live API, through `relay/Start-ClaudeRelay.ps1`.
 
 ## External verification
@@ -513,6 +558,20 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
   - **An independent code review** focused on PS 2.0 / .NET 2.0 compatibility, which found no runtime breakers and 15 smaller fixes, all applied.
   - **First real run (0.3.0, hardened XP VM):** finished without errors; its false findings are fixed in 0.3.1. See [0.3.0: first full security check](#030-first-full-security-check).
   - **Not yet:** Claude mode hasn't been run against the live API.
+- **0.5.0 threat check**, tested on mocks with three setups:
+  - **Clean but not hardened:** WannaCry and BlueKeep came out Protected; the rest were Partly or Exposed with the right fixes.
+  - **Clean and hardened:** 0 risks and 0 warnings, with only the two XP limits as Info.
+  - **Infected:** 8 planted signs, all caught:
+    - a startup entry `photo.jpg.exe` in Temp
+    - a `Userinit` hijack
+    - `AppInit_DLLs`
+    - an IFEO Debugger on `taskmgr.exe`
+    - a service and a scheduled task in `RECYCLER`
+    - a program running from Application Data
+    - hosts redirects for VirusTotal and Microsoft Update
+    - `autorun.inf` on a USB drive
+
+    The real deleted file `Dc3.exe` in the Recycle Bin and XP's built-in sample IFEO key were not flagged. Not yet run on the XP VM.
 - **0.4.0 launcher:**
   - **Under Wine:** run as 32-bit Windows, with a stand-in `powershell.exe` that records its command line. That confirmed the exact command and working folder, the exit code passed back, and escaping of a folder named `O'Connell Kit`.
   - **Error messages:** checked on screen for a missing module folder and for missing PowerShell 2.0.
@@ -543,6 +602,9 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 
 ## Changelog
 
+- **0.5.0:**
+  - **Threat check:** `Get-ThreatExposureXP` rates exposure to current XP threats, and `Find-MalwareIndicatorXP` looks for signs of infection, checks the antivirus, and exports SHA-256 hashes with VirusTotal links.
+  - **Where it shows up:** menu option **V**, part of `Invoke-XPSecurityCheck` (which now also saves `Hashes_<time>.csv`), and four new assistant topics (threats, malware, VirusTotal, antivirus).
 - **0.4.0:**
   - **`NetSecToolkitXP.exe`:** a double-click launcher for XP that opens the new `Start-NetSecToolkitXP` menu, and can also run one command.
   - **`NetSecToolkitXP.cmd`:** a fallback that does the same.
