@@ -375,8 +375,8 @@ All real-machine testing so far has been on one VM:
 |---|---|---|
 | 0.2.0 | First real run | Three false "not patched" risks on a fully patched VM, so the patch check now compares file versions (fixed in 0.2.1) |
 | 0.2.2 | Full hardening, from the pre-hardening snapshot | 0 risks, 0 warnings after reboot; all five commands ran without errors |
-| 0.3.0 | `Invoke-XPSecurityCheck`, on the hardened VM | Ran end to end and saved its transcript, HTML report and snapshot; three false findings, fixed in 0.3.1 |
-| 0.2.3, 0.3.1, 0.4.0 | Not yet | Tested on mocks (and the 0.4.0 launcher under Wine); VM run pending |
+| 0.3.0 | `Invoke-XPSecurityCheck`, on the hardened VM | Ran end to end and saved its transcript, HTML report and snapshot; three false findings, fixed in 0.3.1. Also the first VM run of the 0.2.3 fixes (NetBIOS checked on every interface, Guest found by its SID) |
+| 0.3.1, 0.4.0 | Not yet | Tested on mocks (and the 0.4.0 launcher under Wine); VM run pending |
 
 ### 0.2.2: hardening run
 
@@ -500,7 +500,7 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 - Parsed with the PowerShell language parser, plus a scan for PowerShell 3.0+ syntax: `[pscustomobject]`, `[ordered]`, `-in`, simplified `Where-Object`, `-Parallel`, PS3+ parameters.
 - Every command exercised in PowerShell 7 against mocked WMI, COM, `netsh`, ARP and registry data, including the `-WhatIf`, `-Skip`, failed-step and already-applied paths.
 - Real runs on an XP Professional SP3 VM: see [Verified on an XP VM](#verified-on-an-xp-vm) and [External verification](#external-verification). Each round of VM testing found real bugs that mocks missed: a false positive in the original KB-number patch check (fixed in 0.2.1), and a wrong logging check, a missing gateway MAC and wrapped tables (fixed in 0.2.2).
-- **0.2.3 came from a code review**, and each fix was checked against mocks that reproduce the bug on 0.2.2 first. Those fixes have not had their XP VM run yet; the VM results above are from 0.2.2.
+- **0.2.3 came from a code review**, and each fix was checked against mocks that reproduce the bug on 0.2.2 first. They first ran on the VM as part of 0.3.0.
 
   The very first real run (0.2.0) reported three wormable-flaw patches as missing on a fully patched VM. Later POSReady updates had replaced the original KBs, so the check now compares file versions instead:
 
