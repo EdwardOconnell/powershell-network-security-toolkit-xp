@@ -1,4 +1,4 @@
-# NetSecToolkitXP 0.3.1 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
+# NetSecToolkitXP 0.4.0 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
 # Written for PS 2.0 only: no [pscustomobject], [ordered], -in, member
 # enumeration, simplified Where-Object syntax, or Win8+ Net* cmdlets.
 # Keep this file pure ASCII: PS 2.0 on XP reads BOM-less files as ANSI.
@@ -21,6 +21,8 @@ $script:RiskyPorts = @{
 }
 
 $script:Ipv4Pattern = '^\d{1,3}(\.\d{1,3}){3}$'
+
+$script:ToolkitVersion = '0.4.0'
 
 # Findings from the last run of each audit command, keyed by command name.
 # Invoke-XPAssistant reads these, so it can explain what was just run.
@@ -1519,6 +1521,15 @@ function Find-UpnpGateway {
     return $null
 }
 
+function Get-DefaultReportDir {
+    # My Documents\SecurityChecks, with fallbacks if the shell folder is
+    # not set (a broken profile, or a service account).
+    $base = [Environment]::GetFolderPath('MyDocuments')
+    if ((-not $base) -and $env:USERPROFILE) { $base = Join-Path $env:USERPROFILE 'My Documents' }
+    if (-not $base) { $base = [System.IO.Path]::GetTempPath() }
+    return (Join-Path $base 'SecurityChecks')
+}
+
 function ConvertTo-HtmlText {
     param([string]$Text)
     # IE6-8 do not know &apos;, so use the numeric form.
@@ -2056,7 +2067,7 @@ function Invoke-XPSecurityCheck {
         [switch]$PassThru
     )
 
-    if (-not $ReportDir) { $ReportDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'SecurityChecks' }
+    if (-not $ReportDir) { $ReportDir = Get-DefaultReportDir }
     # .NET file APIs resolve relative paths against the process folder, not
     # the PowerShell location, so make the path absolute first.
     $ReportDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ReportDir)
@@ -2639,7 +2650,7 @@ function Get-AssistantContext {
     $lines = @()
     $os = Get-WmiObject -Class Win32_OperatingSystem -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($os) { $lines += ('OS: {0} {1} (version {2})' -f $os.Caption, $os.CSDVersion, $os.Version) }
-    $lines += ('PowerShell: {0}; NetSecToolkitXP 0.3.1; Administrator window: {1}' -f $PSVersionTable.PSVersion, (Test-IsAdmin))
+    $lines += ('PowerShell: {0}; NetSecToolkitXP {1}; Administrator window: {2}' -f $PSVersionTable.PSVersion, $script:ToolkitVersion, (Test-IsAdmin))
     $issues = @(Get-AssistantIssueList $State.Findings)
     $oks = @($State.Findings | Where-Object { $_ -and ($_.Level -eq 'OK') })
     $lines += ('Findings from: {0}' -f (@($State.Sources) -join ', '))
@@ -3015,7 +3026,187 @@ Set-Alias -Name xpai -Value Invoke-XPAssistant
 
 #endregion
 
+#region Menu (0.4.0)
+
+function Set-ConsoleWidth {
+    # Widens the console so tables fit. The buffer must be at least as wide
+    # as the window, so it is widened first. Never wider than the screen.
+    param([int]$Width = 110)
+    try {
+        $ui = $Host.UI.RawUI
+        $max = $ui.MaxPhysicalWindowSize.Width
+        if ($Width -gt $max) { $Width = $max }
+        $buf = $ui.BufferSize
+        if ($buf.Width -lt $Width) {
+            $buf.Width = $Width
+            if ($buf.Height -lt 3000) { $buf.Height = 3000 }
+            $ui.BufferSize = $buf
+        }
+        $win = $ui.WindowSize
+        if ($win.Width -lt $Width) {
+            $win.Width = $Width
+            $ui.WindowSize = $win
+        }
+    } catch { }
+}
+
+function Read-MenuAnswer {
+    param([string]$Prompt)
+    $a = Read-Host $Prompt
+    if ($a -eq $null) { return '' }
+    return ([string]$a).Trim()
+}
+
+function Wait-MenuReturn {
+    Write-Host ''
+    $null = Read-Host 'Press Enter to go back to the menu'
+}
+
+function Invoke-MenuHardening {
+    # Preview first, then apply only after the user types YES.
+    if (-not (Test-IsAdmin)) {
+        Write-Finding -Level 'Warn' -Message 'Hardening needs an administrator account. Log on as an administrator and run NetSecToolkitXP.exe again.'
+        return
+    }
+    Write-Host ''
+    Write-Host '  Step 1 of 2: preview. Nothing is changed yet.' -ForegroundColor Cyan
+    Set-XPHardening -WhatIf
+    Write-Host ''
+    Write-Host '  Step 2 of 2: apply.' -ForegroundColor Cyan
+    Write-Host '  Type YES to apply all steps, S to choose steps to leave alone, or press Enter to cancel.'
+    $answer = Read-MenuAnswer 'Apply'
+    $skip = @()
+    if ($answer -eq 'S') {
+        Write-Host '  Step names: Firewall Logging FileAndPrint RemoteDesktop RemoteAdmin UPnPException RemoteAssistance'
+        Write-Host '              MSMQ UPnP SimpleTcp Server SmbDevice NetBIOS RemoteRegistry Messenger Telnet Guest'
+        Write-Host '              RestrictAnonymous NoLMHash NTLMv2 PasswordPolicy AutoRun'
+        Write-Host '  To keep file sharing: Server,SmbDevice,NetBIOS,FileAndPrint'
+        $list = Read-MenuAnswer 'Steps to leave alone (separate with commas)'
+        $skip = @($list -split '[,\s]+' | Where-Object { $_ })
+        $valid = @((Get-Command Set-XPHardening).Parameters['Skip'].Attributes |
+            Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } | ForEach-Object { $_.ValidValues })
+        $unknown = @($skip | Where-Object { -not ($valid -contains $_) })
+        if ($unknown.Length -gt 0) {
+            Write-Host ('  Not a step name: {0}. Nothing was changed; choose H to try again.' -f ($unknown -join ', ')) -ForegroundColor Yellow
+            return
+        }
+        $answer = Read-MenuAnswer ('Type YES to apply everything except: ' + ($skip -join ', '))
+    }
+    if ($answer -ne 'YES') {
+        Write-Host '  Cancelled. Nothing was changed.' -ForegroundColor Yellow
+        return
+    }
+    if ($skip.Length -gt 0) { Set-XPHardening -Skip $skip } else { Set-XPHardening }
+    Write-Host ''
+    $reboot = Read-MenuAnswer 'Restart now so every change applies? (Y/N)'
+    if ($reboot -eq 'Y') {
+        Write-Host '  Restarting. After it starts again, run the full check (option 1).'
+        Restart-Computer -Force
+    } else {
+        Write-Host '  Restart later, then run the full check (option 1) to confirm.' -ForegroundColor DarkGray
+    }
+}
+
+function Open-LastReport {
+    $dir = Get-DefaultReportDir
+    $last = @(Get-ChildItem -Path $dir -Filter 'Report_*.html' -ErrorAction SilentlyContinue | Sort-Object Name -Descending) | Select-Object -First 1
+    if (-not $last) {
+        Write-Finding -Level 'Info' -Message ('No report yet in {0}. Run the full check (option 1) first.' -f $dir)
+        return
+    }
+    Write-Host ('  Opening {0}' -f $last.FullName)
+    Invoke-Item -LiteralPath $last.FullName
+}
+
+function Show-ToolkitMenu {
+    Write-Host ''
+    Write-Host ('=' * 60) -ForegroundColor DarkCyan
+    Write-Host (' NetSecToolkitXP {0} - Windows XP security toolkit' -f $script:ToolkitVersion) -ForegroundColor Cyan
+    $admin = 'yes'
+    if (-not (Test-IsAdmin)) { $admin = 'NO (checks only; option H needs an administrator)' }
+    Write-Host (' Computer: {0}   User: {1}   Administrator: {2}' -f $env:COMPUTERNAME, $env:USERNAME, $admin) -ForegroundColor DarkGray
+    Write-Host ('=' * 60) -ForegroundColor DarkCyan
+    Write-Host '  Checks (change nothing)' -ForegroundColor White
+    Write-Host '    1  Full security check (all of the below, saves a report)'
+    Write-Host '    2  Hardening status'
+    Write-Host '    3  Firewall exceptions'
+    Write-Host '    4  Accounts and logon'
+    Write-Host '    5  Firewall log (what was blocked)'
+    Write-Host '    6  Devices on the network'
+    Write-Host '    7  Router ports and UPnP'
+    Write-Host '    8  Network adapters and connectivity'
+    Write-Host '    9  USB storage history'
+    Write-Host '  Fix' -ForegroundColor White
+    Write-Host '    H  Harden this PC (shows a preview first)'
+    Write-Host '  Help' -ForegroundColor White
+    Write-Host '    A  Ask the assistant (what to fix first, what a finding means)'
+    Write-Host '    R  Open the last report'
+    Write-Host '    P  PowerShell prompt with the toolkit loaded (type exit to come back)'
+    Write-Host '    Q  Quit'
+}
+
+function Start-NetSecToolkitXP {
+<#
+.SYNOPSIS
+    Menu for the whole toolkit. NetSecToolkitXP.exe opens this.
+.DESCRIPTION
+    Shows a numbered menu of the checks, the hardening run (always previewed
+    first and applied only after you type YES), the assistant and the last
+    report, so the toolkit can be used without typing commands. Errors in
+    one option are shown and the menu carries on.
+.EXAMPLE
+    Start-NetSecToolkitXP
+#>
+    [CmdletBinding()]
+    param()
+
+    try { $Host.UI.RawUI.WindowTitle = 'NetSecToolkitXP ' + $script:ToolkitVersion } catch { }
+    Set-ConsoleWidth -Width 110
+
+    $done = $false
+    while (-not $done) {
+        Show-ToolkitMenu
+        Write-Host ''
+        $choice = (Read-MenuAnswer 'Choose').ToUpper()
+        $wait = $true
+        try {
+            switch ($choice) {
+                '1' { Invoke-XPSecurityCheck }
+                '2' { Get-XPHardeningStatus }
+                '3' { Get-FirewallAuditXP }
+                '4' { Get-AccountAuditXP }
+                '5' { Get-FirewallLogXP }
+                '6' {
+                    $sweep = Read-MenuAnswer 'Ping every address on the subnet too? Takes about a minute. (Y/N)'
+                    if ($sweep -eq 'Y') { Find-NetworkDeviceXP } else { Find-NetworkDeviceXP -NoSweep }
+                }
+                '7' { Test-RouterExposureXP }
+                '8' { Get-NetAdapterHealthXP }
+                '9' { Get-USBHistoryXP }
+                'H' { Invoke-MenuHardening }
+                'A' { Invoke-XPAssistant; $wait = $false }
+                'R' { Open-LastReport }
+                'P' {
+                    Write-Host '  Type exit to come back to the menu. Get-Help <command> -Full explains any command.' -ForegroundColor DarkGray
+                    $wait = $false
+                    $Host.EnterNestedPrompt()
+                }
+                'Q' { $done = $true; $wait = $false }
+                ''  { $wait = $false }
+                default { Write-Host ('  "{0}" is not on the menu.' -f $choice) -ForegroundColor Yellow }
+            }
+        } catch {
+            Write-Host ''
+            Write-Host ('  Error: ' + $_.Exception.Message) -ForegroundColor Red
+            Write-Host '  The menu is still running. If this keeps happening, send a photo of this screen.' -ForegroundColor DarkGray
+        }
+        if ($wait -and (-not $done)) { Wait-MenuReturn }
+    }
+}
+
+#endregion
+
 Export-ModuleMember -Function Get-NetAdapterHealthXP, Get-FirewallAuditXP, Find-NetworkDeviceXP,
     Set-XPHardening, Get-XPHardeningStatus, Get-AccountAuditXP, Get-FirewallLogXP,
     Test-RouterExposureXP, Get-USBHistoryXP, Invoke-XPSecurityCheck, Invoke-XPAssistant,
-    Set-XPAssistantConfig -Alias xpai
+    Set-XPAssistantConfig, Start-NetSecToolkitXP -Alias xpai

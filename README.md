@@ -1,10 +1,12 @@
 # NetSecToolkitXP
 
-![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.3.1](https://img.shields.io/badge/version-0.3.1-lightgrey)
+![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-lightgrey)
 
 The Windows XP SP3 / PowerShell 2.0 edition of my [PowerShell Network Security Toolkit](https://github.com/EdwardOconnell/powershell-network-security-toolkit).
 
 The main toolkit targets PowerShell 7 and relies on the `Net*` cmdlets (`Get-NetAdapter`, `Get-NetFirewallRule`), which only exist on Windows 8 and later. This edition rebuilds the core checks with WMI, COM and `netsh firewall` so they run on XP. It also adds a one-command hardening baseline based on locking down a real XP laptop, an all-in-one daily check, and a security assistant that explains the findings and says what to fix first.
+
+**Easiest way to run it:** download the release zip, copy it to the XP machine, extract it and double-click **`NetSecToolkitXP.exe`**. A numbered menu opens, with no execution policy changes, `Import-Module` or typing needed. See [Run it with NetSecToolkitXP.exe](#run-it-with-netsectoolkitxpexe).
 
 Everything is read-only except `Set-XPHardening` (which supports `-WhatIf`) and `Set-XPAssistantConfig` (which only saves the assistant's settings).
 
@@ -24,6 +26,7 @@ Everything is read-only except `Set-XPHardening` (which supports `-WhatIf`) and 
 | `Invoke-XPSecurityCheck` | Runs all of the checks above in one go, flags devices and USB drives that are new since the last run, and saves a transcript, an HTML report and a snapshot. |
 | `Invoke-XPAssistant` (alias `xpai`) | Security assistant: explains findings, answers questions and builds a fix order. Works offline; can also ask Claude through a relay on a modern PC. See [Security assistant](#security-assistant). |
 | `Set-XPAssistantConfig` | Saves the relay address and token for the assistant's Claude mode. |
+| `Start-NetSecToolkitXP` | The numbered menu that `NetSecToolkitXP.exe` opens. |
 
 The checks accept `-PassThru` to return objects, and `Get-Help <command> -Full` shows the built-in help.
 
@@ -35,7 +38,46 @@ The repo also has `relay\Start-ClaudeRelay.ps1`, which runs on the modern host P
 - .NET Framework 2.0 SP1 or later (3.5 SP1 covers it)
 - Windows PowerShell 2.0, from the Windows Management Framework Core package (KB968930)
 
-## Install
+## Run it with NetSecToolkitXP.exe
+
+1. Download `NetSecToolkitXP-0.4.0.zip` from the [Releases](../../releases) page (or the repo zip), and copy it to the XP machine.
+2. Extract it. Keep `NetSecToolkitXP.exe` and the `NetSecToolkitXP` folder together.
+3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for option H.
+
+```
+ NetSecToolkitXP 0.4.0 - Windows XP security toolkit
+ Computer: XPVM   User: Edward   Administrator: yes
+  Checks (change nothing)
+    1  Full security check (all of the below, saves a report)
+    2  Hardening status
+    3  Firewall exceptions
+    4  Accounts and logon
+    5  Firewall log (what was blocked)
+    6  Devices on the network
+    7  Router ports and UPnP
+    8  Network adapters and connectivity
+    9  USB storage history
+  Fix
+    H  Harden this PC (shows a preview first)
+  Help
+    A  Ask the assistant (what to fix first, what a finding means)
+    R  Open the last report
+    P  PowerShell prompt with the toolkit loaded (type exit to come back)
+    Q  Quit
+```
+
+**Option H** always shows the `-WhatIf` preview first and changes nothing until you type `YES`. You can type `S` to name steps to leave alone; unknown step names cancel the run. Then it offers to restart.
+
+How the .exe works:
+
+- **It's a small launcher** (13 KB, plain Win32 C, no C runtime; source in [`launcher/`](launcher/)). It starts `powershell.exe -ExecutionPolicy Bypass` for that one window and loads the module from the folder next to it, so the system's execution policy is never changed.
+- **It explains what's missing.** If PowerShell 2.0 isn't installed, or the `NetSecToolkitXP` folder isn't next to it, it shows a message saying exactly that.
+- **It can run one command.** From a command prompt, `NetSecToolkitXP.exe Invoke-XPSecurityCheck -ActiveScan` runs that command instead of the menu. Double quotes inside the command aren't supported; use single quotes.
+- **There's a fallback.** If an antivirus blocks unsigned programs, `NetSecToolkitXP.cmd` does the same thing.
+
+To rebuild the .exe: `launcher/build.sh` with mingw-w64 (`gcc-mingw-w64-i686` on Debian/Ubuntu, or MSYS2 on Windows).
+
+## Install (PowerShell)
 
 1. Download the repo and copy the `NetSecToolkitXP` folder to the XP machine, for example:
    `C:\Documents and Settings\<you>\My Documents\WindowsPowerShell\Modules\NetSecToolkitXP`
@@ -315,10 +357,30 @@ These steps were first done by hand on an XP SP3 laptop, then collected into `Se
 
 ## Verified on an XP VM
 
-Tested with 0.2.2 on Windows XP Professional SP3 in VMware Workstation (PowerShell 2.0, fully updated through Legacy Update plus KB4500331), starting from a pre-hardening snapshot:
+All real-machine testing so far has been on one VM:
+
+| | |
+|---|---|
+| OS | Windows XP Professional SP3, 32-bit (5.1.2600), in VMware Workstation on Windows 11 |
+| PowerShell | 2.0 (Windows Management Framework Core, KB968930) |
+| Updates | Fully updated through Legacy Update, plus KB4500331 (BlueKeep) from the Update Catalog |
+| Network | VMware NAT (VMnet8): VM `192.168.107.128`, gateway `192.168.107.2`, host `192.168.107.1` |
+| Snapshots | "Pre-hardening - toolkit 0.2.2" and "Post-hardening" |
 
 ![Test environment: Windows XP Professional SP3 (5.1.2600), PowerShell 2.0, NetSecToolkitXP 0.2.2](docs/images/environment.png)
 
+### Results by version
+
+| Version | Run on the VM | Result |
+|---|---|---|
+| 0.2.0 | First real run | Three false "not patched" risks on a fully patched VM, so the patch check now compares file versions (fixed in 0.2.1) |
+| 0.2.2 | Full hardening, from the pre-hardening snapshot | 0 risks, 0 warnings after reboot; all five commands ran without errors |
+| 0.3.0 | `Invoke-XPSecurityCheck`, on the hardened VM | Ran end to end and saved its transcript, HTML report and snapshot; three false findings, fixed in 0.3.1 |
+| 0.2.3, 0.3.1, 0.4.0 | Not yet | Tested on mocks (and the 0.4.0 launcher under Wine); VM run pending |
+
+### 0.2.2: hardening run
+
+Starting from the pre-hardening snapshot:
 
 | | Before | After `Set-XPHardening` + reboot |
 |---|---|---|
@@ -327,7 +389,7 @@ Tested with 0.2.2 on Windows XP Professional SP3 in VMware Workstation (PowerShe
 | Remote Assistance | On | Off |
 | Network-facing TCP ports | 135, 139, 445 | **135 only** (RPC, blocked by the firewall) |
 
-`Set-XPHardening` reported 16 steps Applied, 2 N/A (MSMQ and Simple TCP/IP Services weren't installed on the VM) and 0 Failed. All five commands ran without errors, including the 0.2.2 fixes: the firewall audit reads logging correctly and its tables fit the console, and `Find-NetworkDeviceXP` reports the gateway's MAC.
+`Set-XPHardening` reported 16 steps Applied, 2 N/A (MSMQ and Simple TCP/IP Services weren't installed on the VM) and 0 Failed. All five commands ran without errors, including the 0.2.2 fixes: the firewall audit reads logging correctly, its tables fit the console, and `Find-NetworkDeviceXP` reports the gateway's MAC.
 
 **Before:** `Get-XPHardeningStatus` on the unhardened VM, 0 risks and 12 warnings.
 
@@ -340,6 +402,53 @@ Tested with 0.2.2 on Windows XP Professional SP3 in VMware Workstation (PowerShe
 **After the reboot:** 0 risks, 0 warnings, only port 135 listening.
 
 ![Get-XPHardeningStatus after hardening: 0 risks, 0 warnings](docs/images/status-after.png)
+
+### 0.3.0: first full security check
+
+`Invoke-XPSecurityCheck` ran on the VM that 0.2.2 had already hardened. It finished without errors, saved `Check_*.txt`, `Report_*.html` and `Snapshot_*.xml` to `My Documents\SecurityChecks`, and reported **1 risk, 7 warnings, 43 findings**.
+
+**Already in place from the 0.2.2 hardening:**
+
+| Area | Result |
+|---|---|
+| Firewall | On, exceptions disabled, dropped-packet logging on |
+| Services | Server, Computer Browser, UPnP Device Host, SSDP, Remote Registry, Messenger and Telnet stopped and disabled; MSMQ and Simple TCP/IP not installed |
+| SMB / ports | `SMBDeviceEnabled = 0`; only 135 (RPC) listening, blocked by the firewall |
+| Accounts | Guest disabled; automatic logon off; `LimitBlankPasswordUse = 1` |
+| Remote Assistance, AutoRun | Remote Assistance off; AutoRun off for all drive types |
+| Patches | Conficker `netapi32.dll` 5.1.2600.6260, WannaCry `srv.sys` 5.1.2600.7651 and BlueKeep `termdd.sys` 5.1.2600.7701: all patched |
+| Connectivity | Gateway 0 ms, 8.8.8.8 23 ms, DNS lookup OK |
+| Router | No UPnP answer |
+
+**Real warnings (5)**, all from checks added in 0.3.0, which the 0.2.2 hardening run didn't have yet. A `Set-XPHardening` run with 0.3.0 or later covers all of them:
+
+- `RestrictAnonymous` is 0.
+- LM password hashes are still stored.
+- NTLMv1 is still allowed (`LmCompatibilityLevel` below 3).
+- No minimum password length.
+- No account lockout.
+
+**False findings, fixed in 0.3.1:**
+
+| Finding | Why it was wrong | Fix |
+|---|---|---|
+| Risk: "Router port 21 (FTP) is open" | The gateway is VMware's NAT service (MAC `00-50-56-...`), not a real router | Virtual NAT gateways are recognized; their ports are reported as Info |
+| Warn: "ASPNET is allowed a blank password" | `ASPNET` is the .NET Framework's service account, with a random password | ASPNET, IUSR_ and IWAM_ are reported as service accounts (Info) |
+| Warn: NetBIOS on two adapters named only by GUID | They are removed adapters with leftover settings | Named "removed adapter {GUID}" (still a real warning, since Windows can reuse them) |
+| (missing) Firewall log section | Nothing blocked was aimed at this PC, so it reported nothing | Always reports the blocked-packet count |
+
+Also reported, as Info:
+
+- **Accounts:** two enabled administrator accounts, and the screen saver doesn't lock the PC.
+- **DEP:** set to OptIn, the XP default.
+- **USB:** no USB storage devices have been connected.
+- **Network:** this run saved the device list as the baseline.
+
+### Still to run on the VM
+
+- [ ] 0.3.1 / 0.4.0: `Set-XPHardening` from the pre-hardening snapshot, reboot, then `Invoke-XPSecurityCheck`. Expected result: 0 risks, 0 warnings.
+- [ ] 0.4.0: double-click `NetSecToolkitXP.exe`, then run options 1, H and A from the menu.
+- [ ] Claude mode against the live API, through `relay/Start-ClaudeRelay.ps1`.
 
 ## External verification
 
@@ -400,11 +509,15 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
   - **Every new command:** account audit, firewall log, router, USB, two runs of `Invoke-XPSecurityCheck` (new device and new USB drive flagged on the second), and the assistant's offline answers and interactive prompt.
   - **Claude mode, end to end:** the XP client through `Start-ClaudeRelay.ps1` to a fake Messages API. That covered multi-turn history, masking, and the wrong-token (401), oversized (413), rate-limit (429), blocked-client (403) and relay-down paths.
   - **An independent code review** focused on PS 2.0 / .NET 2.0 compatibility, which found no runtime breakers and 15 smaller fixes, all applied.
-  - **First real run (0.3.0, hardened XP VM):** `Invoke-XPSecurityCheck` finished without errors and saved its transcript, HTML report and snapshot. It found 1 risk and 7 warnings. Three of those were the toolkit's mistakes, fixed in 0.3.1:
-    - FTP "open on the router": the gateway was VMware's NAT service, not a real router.
-    - The .NET `ASPNET` service account flagged for a blank password.
-    - Removed adapters labelled with bare GUIDs.
+  - **First real run (0.3.0, hardened XP VM):** finished without errors; its false findings are fixed in 0.3.1. See [0.3.0: first full security check](#030-first-full-security-check).
   - **Not yet:** Claude mode hasn't been run against the live API.
+- **0.4.0 launcher:**
+  - **Under Wine:** run as 32-bit Windows, with a stand-in `powershell.exe` that records its command line. That confirmed the exact command and working folder, the exit code passed back, and escaping of a folder named `O'Connell Kit`.
+  - **Error messages:** checked on screen for a missing module folder and for missing PowerShell 2.0.
+  - **Imports:** its import table lists only functions that exist in XP's `kernel32.dll` and `user32.dll`, and its PE header targets Windows 5.1.
+  - **Real PowerShell:** the same command line loads the module.
+  - **Menu:** driven on mocks through every path: preview then cancel, `S` with a skip list then `YES`, an unknown step name, no report yet, the device sweep prompt, the assistant, and an invalid choice.
+  - **Not yet:** run on the XP VM.
 - Files are pure ASCII with CRLF line endings, so PS 2.0 reads them correctly and they open cleanly in XP's Notepad.
 - Recommended: test in an XP SP3 VM using **NAT or Host-only networking** (never Bridged), with a snapshot taken before running `Set-XPHardening`.
 
@@ -416,6 +529,7 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 - `netsh`, `arp -a`, `net accounts` and `net localgroup` parsing expects English-language XP output.
 - `Test-RouterExposureXP` checks one port at a time (PS 2.0 has no `-Parallel`), about 13 seconds worst case. A router that ignores SSDP from this PC shows UPnP as off.
 - Claude mode needs a modern PC running the relay and an Anthropic API key; the offline assistant needs neither.
+- `NetSecToolkitXP.exe` isn't code-signed, so downloading it on a modern PC may bring up a SmartScreen or antivirus warning. The source and build script are in `launcher/`, and `NetSecToolkitXP.cmd` is the fallback.
 - Firewall logging is a single setting for all profiles on XP, read from `netsh firewall show logging`.
 - DHCP lease times use `System.Management`; if one shows blank, `ipconfig /all` has it.
 
@@ -427,6 +541,10 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 
 ## Changelog
 
+- **0.4.0:**
+  - **`NetSecToolkitXP.exe`:** a double-click launcher for XP that opens the new `Start-NetSecToolkitXP` menu, and can also run one command.
+  - **`NetSecToolkitXP.cmd`:** a fallback that does the same.
+  - **Report folder:** reports fall back to `%USERPROFILE%\My Documents` (then the temp folder) if the shell folder isn't set.
 - **0.3.1** (fixes from the first real run of 0.3.0):
   - **Virtual gateways:** `Test-RouterExposureXP` recognizes a VMware, VirtualBox or Hyper-V NAT gateway by its MAC and reports its ports as Info, since they describe the VM software, not your router.
   - **Service accounts:** `ASPNET`, `IUSR_*` and `IWAM_*` are reported as Info service accounts instead of "allowed a blank password".

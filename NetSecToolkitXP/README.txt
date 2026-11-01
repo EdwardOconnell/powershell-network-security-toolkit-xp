@@ -1,11 +1,17 @@
-NetSecToolkitXP 0.3.1
+NetSecToolkitXP 0.4.0
 =====================
 Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit, with a security
 assistant. Everything is read-only except Set-XPHardening, which applies
 the hardening baseline (use -WhatIf first to preview it), and
 Set-XPAssistantConfig, which only saves the assistant's settings.
 
-Quick start (Administrator window):
+Easiest: double-click NetSecToolkitXP.exe (keep it next to this
+NetSecToolkitXP folder). It opens a numbered menu: 1 = full check,
+H = harden (preview first, applies only after you type YES),
+A = assistant, Q = quit. No Set-ExecutionPolicy or Import-Module needed.
+If an antivirus blocks the .exe, double-click NetSecToolkitXP.cmd instead.
+
+Quick start from PowerShell instead (Administrator window):
   Import-Module NetSecToolkitXP
   Invoke-XPSecurityCheck         # check everything, save a report
   xpai                           # ask the assistant; type plan
@@ -143,6 +149,8 @@ Invoke-XPAssistant       Security assistant (alias: xpai). Uses the findings
                          Offline by default: built-in notes, nothing leaves
                          this PC. Claude mode: see below.
 
+Start-NetSecToolkitXP    The numbered menu NetSecToolkitXP.exe opens.
+
 Set-XPAssistantConfig    Saves the relay address/token for Claude mode.
                            -RelayUrl http://<host>:8787 -RelayToken <token>
                            -DefaultMode Claude  -Test  -Clear
@@ -234,6 +242,10 @@ Testing and known limits
 
 Changes
 -------
+0.4.0  NetSecToolkitXP.exe: double-click launcher that opens the new
+       Start-NetSecToolkitXP menu (or runs one command given after it),
+       plus NetSecToolkitXP.cmd as a fallback. Reports fall back to
+       %USERPROFILE%\My Documents if the shell folder is not set.
 0.3.1  Fixes from the first XP run: a VMware/VirtualBox/Hyper-V NAT
        gateway is recognized and its ports reported as Info; ASPNET,
        IUSR_ and IWAM_ service accounts are Info, not "blank password";
