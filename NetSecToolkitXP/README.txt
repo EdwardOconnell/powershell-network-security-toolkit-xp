@@ -1,4 +1,4 @@
-NetSecToolkitXP 0.3.0
+NetSecToolkitXP 0.3.1
 =====================
 Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit, with a security
 assistant. Everything is read-only except Set-XPHardening, which applies
@@ -217,7 +217,9 @@ Testing and known limits
 - 0.3.0 (new checks, hardening steps and the assistant) was tested with
   mocked data in PowerShell 7, including Claude mode end to end through
   the relay to a fake API, plus an independent PS 2.0 compatibility
-  review. It has not had an XP VM run yet.
+  review. 0.3.0 then ran on the hardened XP VM without errors; its three
+  false findings (VMware NAT as "router", ASPNET account, unnamed removed
+  adapters) are fixed in 0.3.1.
 - XP x64 / Server 2003 (5.2) are not supported. Get-XPHardeningStatus
   skips the wormable-flaw checks there, because their 5.2.3790.x file
   versions would always look newer than the XP fixes.
@@ -232,6 +234,11 @@ Testing and known limits
 
 Changes
 -------
+0.3.1  Fixes from the first XP run: a VMware/VirtualBox/Hyper-V NAT
+       gateway is recognized and its ports reported as Info; ASPNET,
+       IUSR_ and IWAM_ service accounts are Info, not "blank password";
+       the firewall log always reports its blocked-packet count; removed
+       adapters are named in the NetBIOS finding.
 0.3.0  Security assistant: Invoke-XPAssistant (xpai), offline notes, fix
        order and finding explanations, optional Claude mode through
        relay\Start-ClaudeRelay.ps1; Set-XPAssistantConfig. New checks:

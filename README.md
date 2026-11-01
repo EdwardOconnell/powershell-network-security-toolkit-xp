@@ -1,6 +1,6 @@
 # NetSecToolkitXP
 
-![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-lightgrey)
+![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.3.1](https://img.shields.io/badge/version-0.3.1-lightgrey)
 
 The Windows XP SP3 / PowerShell 2.0 edition of my [PowerShell Network Security Toolkit](https://github.com/EdwardOconnell/powershell-network-security-toolkit).
 
@@ -400,7 +400,11 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
   - **Every new command:** account audit, firewall log, router, USB, two runs of `Invoke-XPSecurityCheck` (new device and new USB drive flagged on the second), and the assistant's offline answers and interactive prompt.
   - **Claude mode, end to end:** the XP client through `Start-ClaudeRelay.ps1` to a fake Messages API. That covered multi-turn history, masking, and the wrong-token (401), oversized (413), rate-limit (429), blocked-client (403) and relay-down paths.
   - **An independent code review** focused on PS 2.0 / .NET 2.0 compatibility, which found no runtime breakers and 15 smaller fixes, all applied.
-  - **Not yet:** it hasn't had its XP VM run, and Claude mode hasn't been run against the live API. The VM results above are from 0.2.2.
+  - **First real run (0.3.0, hardened XP VM):** `Invoke-XPSecurityCheck` finished without errors and saved its transcript, HTML report and snapshot. It found 1 risk and 7 warnings. Three of those were the toolkit's mistakes, fixed in 0.3.1:
+    - FTP "open on the router": the gateway was VMware's NAT service, not a real router.
+    - The .NET `ASPNET` service account flagged for a blank password.
+    - Removed adapters labelled with bare GUIDs.
+  - **Not yet:** Claude mode hasn't been run against the live API.
 - Files are pure ASCII with CRLF line endings, so PS 2.0 reads them correctly and they open cleanly in XP's Notepad.
 - Recommended: test in an XP SP3 VM using **NAT or Host-only networking** (never Bridged), with a snapshot taken before running `Set-XPHardening`.
 
@@ -423,6 +427,11 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 
 ## Changelog
 
+- **0.3.1** (fixes from the first real run of 0.3.0):
+  - **Virtual gateways:** `Test-RouterExposureXP` recognizes a VMware, VirtualBox or Hyper-V NAT gateway by its MAC and reports its ports as Info, since they describe the VM software, not your router.
+  - **Service accounts:** `ASPNET`, `IUSR_*` and `IWAM_*` are reported as Info service accounts instead of "allowed a blank password".
+  - **Firewall log:** `Get-FirewallLogXP` always reports how many packets were blocked (it was silent when none were aimed at this PC).
+  - **Removed adapters:** NetBIOS findings name them "removed adapter {GUID}".
 - **0.3.0** (new features and the assistant):
   - **Security assistant:** `Invoke-XPAssistant` (alias `xpai`) with offline notes, finding explanations and a fix order, plus an optional Claude mode through `relay\Start-ClaudeRelay.ps1`. `Set-XPAssistantConfig` saves the relay settings.
   - **New checks:** `Get-AccountAuditXP`, `Get-FirewallLogXP`, `Test-RouterExposureXP` (ports and UPnP) and `Get-USBHistoryXP`.

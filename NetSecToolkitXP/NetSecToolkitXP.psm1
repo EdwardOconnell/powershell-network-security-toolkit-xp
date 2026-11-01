@@ -1,4 +1,4 @@
-# NetSecToolkitXP 0.3.0 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
+# NetSecToolkitXP 0.3.1 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
 # Written for PS 2.0 only: no [pscustomobject], [ordered], -in, member
 # enumeration, simplified Where-Object syntax, or Win8+ Net* cmdlets.
 # Keep this file pure ASCII: PS 2.0 on XP reads BOM-less files as ANSI.
@@ -795,7 +795,7 @@ function Get-NetbtInterface {
         if ($leaf -notlike 'Tcpip_*') { continue }
         $guid = $leaf.Substring(6).ToUpper()
         $desc = $names[$guid]
-        if (-not $desc) { $desc = 'Adapter ' + $guid }
+        if (-not $desc) { $desc = 'removed adapter ' + $guid }
         $opt = (Get-ItemProperty -Path ($root + '\' + $leaf) -ErrorAction SilentlyContinue).NetbiosOptions
         New-Object PSObject -Property @{ Path = ($root + '\' + $leaf); Description = $desc; NetbiosOptions = $opt }
     }
@@ -1455,6 +1455,17 @@ function Test-PrivateIPv4 {
     return $false
 }
 
+function Get-VirtualGatewayKind {
+    # Names the VM software when a MAC belongs to a virtual NAT gateway.
+    param([string]$Mac)
+    $m = ([string]$Mac).ToUpper() -replace ':', '-'
+    if ($m -like '00-50-56-*') { return 'VMware' }
+    if ($m -like '52-54-00-*') { return 'VirtualBox/QEMU' }
+    if ($m -like '08-00-27-*') { return 'VirtualBox' }
+    if ($m -like '00-15-5D-*') { return 'Hyper-V' }
+    return $null
+}
+
 function Test-TcpPort {
     # TCP connect test with a timeout (.NET 2.0 BeginConnect, since PS 2.0 has
     # no Test-NetConnection). Returns $true if the port accepted a connection.
@@ -1589,6 +1600,8 @@ function Get-AccountAuditXP {
         elseif ($rid -eq '501') { $builtin = 'Guest' }
         elseif ($a.Name -eq 'HelpAssistant') { $builtin = 'Remote Assistance' }
         elseif ([string]$a.Name -like 'SUPPORT_*') { $builtin = 'Help and Support' }
+        elseif ($a.Name -eq 'ASPNET') { $builtin = 'Service (.NET)' }
+        elseif (([string]$a.Name -like 'IUSR_*') -or ([string]$a.Name -like 'IWAM_*')) { $builtin = 'Service (IIS)' }
         $lname = ([string]$a.Name).ToLower()
         $isAdmin = $false
         foreach ($m in $adminNames) {
@@ -1608,6 +1621,12 @@ function Get-AccountAuditXP {
 
     foreach ($r in $rows) {
         if (-not $r.Enabled) { continue }
+        if ($r.BuiltIn -like 'Service*') {
+            # ASPNET / IUSR_ / IWAM_ are created by .NET and IIS with random
+            # passwords; PasswordRequired = False on them is normal.
+            $findings += New-Finding -Area 'Accounts' -Level 'Info' -Message ('"{0}" is a service account created by {1}, with a random password. Disable it if this PC does not run a web server.' -f $r.Name, ($r.BuiltIn -replace '^Service \((.+)\)$', '$1')) -Fix ('net user "{0}" /active:no' -f $r.Name)
+            continue
+        }
         # Guest never requires a password; Get-XPHardeningStatus covers it.
         if ((-not $r.PasswordRequired) -and ($r.BuiltIn -ne 'Guest')) {
             $findings += New-Finding -Area 'Accounts' -Level 'Warn' -Message ('"{0}" is allowed a blank password (PasswordRequired = False).' -f $r.Name) -Fix ('net user "{0}" /passwordreq:yes   (and give it a password)' -f $r.Name)
@@ -1776,6 +1795,8 @@ function Get-FirewallLogXP {
 
         if ($drops -eq 0) {
             $findings += New-Finding -Area 'FirewallLog' -Level 'OK' -Message ('No blocked packets in the last {0} hours.' -f $Hours)
+        } else {
+            $findings += New-Finding -Area 'FirewallLog' -Level 'Info' -Message ('{0} packet(s) blocked in the last {1} hours; {2} aimed at this PC, the rest broadcast or multicast.' -f $drops, $Hours, $direct.Count)
         }
 
         # One source probing many ports looks like a scan.
@@ -1884,9 +1905,22 @@ function Test-RouterExposureXP {
     $results = @($results | Select-Object Port, Service, Open, Risk, Note)
     Write-TableToHost @($results | Select-Object Port, Service, Open, Note)
 
+    # A VM's gateway is usually the VM software's own NAT service, not the
+    # home router, so its open ports say nothing about the real router.
+    $gwMac = ''
+    foreach ($e in @(ConvertFrom-ArpTable -Text (arp -a))) { if ($e.IPAddress -eq $Router) { $gwMac = $e.MAC } }
+    $virtual = Get-VirtualGatewayKind -Mac $gwMac
+    $high = 'Risk'
+    $warnLevel = 'Warn'
+    if ($virtual) {
+        $high = 'Info'
+        $warnLevel = 'Info'
+        $findings += New-Finding -Area 'Router' -Level 'Info' -Message ('The gateway {0} is {1}''s virtual NAT (MAC {2}), not a real router, so the results below describe the VM software. To check your home router, run Test-RouterExposureXP on a PC on your real network, or the main toolkit''s Test-RouterExposure.' -f $Router, $virtual, $gwMac)
+    }
+
     $openPorts = @($results | Where-Object { $_.Open })
     foreach ($r in @($openPorts | Where-Object { $_.Risk -eq 'High' })) {
-        $findings += New-Finding -Area 'Router' -Level 'Risk' -Message ('Router port {0} ({1}) is open on the LAN.' -f $r.Port, $r.Service) -Fix 'Turn it off in the router admin page (Administration / Services / WAN), or update the router firmware'
+        $findings += New-Finding -Area 'Router' -Level $high -Message ('Router port {0} ({1}) is open on the LAN.' -f $r.Port, $r.Service) -Fix 'Turn it off in the router admin page (Administration / Services / WAN), or update the router firmware'
     }
     foreach ($r in @($openPorts | Where-Object { $_.Risk -eq 'Review' })) {
         $findings += New-Finding -Area 'Router' -Level 'Info' -Message ('Router port {0} ({1}) is open. Fine if you use it.' -f $r.Port, $r.Service)
@@ -1894,7 +1928,7 @@ function Test-RouterExposureXP {
     $http = @($openPorts | Where-Object { $_.Port -eq 80 }).Length -gt 0
     $https = @($openPorts | Where-Object { ($_.Port -eq 443) -or ($_.Port -eq 8443) }).Length -gt 0
     if ($http -and (-not $https)) {
-        $findings += New-Finding -Area 'Router' -Level 'Warn' -Message 'Router admin page is HTTP only, so its password crosses the network unencrypted.' -Fix 'Turn on HTTPS for the admin page (often under Administration > System) if the router supports it'
+        $findings += New-Finding -Area 'Router' -Level $warnLevel -Message 'Router admin page is HTTP only, so its password crosses the network unencrypted.' -Fix 'Turn on HTTPS for the admin page (often under Administration > System) if the router supports it'
     }
     if ($openPorts.Length -eq 0) {
         $findings += New-Finding -Area 'Router' -Level 'Info' -Message 'No common TCP ports answered (the router may block this PC, or use other ports).'
@@ -1907,7 +1941,7 @@ function Test-RouterExposureXP {
         if ($upnp) {
             $detail = ''
             if ($upnp.Server) { $detail = ' (' + $upnp.Server + ')' }
-            $findings += New-Finding -Area 'Router' -Level 'Warn' -Message ('The router answers UPnP discovery{0}: any program on any device here can open ports to the internet without a password.' -f $detail) -Fix 'Turn off UPnP in the router admin page unless a console or app really needs it'
+            $findings += New-Finding -Area 'Router' -Level $warnLevel -Message ('The router answers UPnP discovery{0}: any program on any device here can open ports to the internet without a password.' -f $detail) -Fix 'Turn off UPnP in the router admin page unless a console or app really needs it'
         } else {
             $findings += New-Finding -Area 'Router' -Level 'OK' -Message 'The router did not answer UPnP discovery (off, or not reachable from this PC).'
         }
@@ -2605,7 +2639,7 @@ function Get-AssistantContext {
     $lines = @()
     $os = Get-WmiObject -Class Win32_OperatingSystem -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($os) { $lines += ('OS: {0} {1} (version {2})' -f $os.Caption, $os.CSDVersion, $os.Version) }
-    $lines += ('PowerShell: {0}; NetSecToolkitXP 0.3.0; Administrator window: {1}' -f $PSVersionTable.PSVersion, (Test-IsAdmin))
+    $lines += ('PowerShell: {0}; NetSecToolkitXP 0.3.1; Administrator window: {1}' -f $PSVersionTable.PSVersion, (Test-IsAdmin))
     $issues = @(Get-AssistantIssueList $State.Findings)
     $oks = @($State.Findings | Where-Object { $_ -and ($_.Level -eq 'OK') })
     $lines += ('Findings from: {0}' -f (@($State.Sources) -join ', '))
