@@ -4,15 +4,15 @@
 
 # NetSecToolkitXP
 
-![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-lightgrey)
+![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.5.2](https://img.shields.io/badge/version-0.5.2-lightgrey)
 
 The Windows XP SP3 / PowerShell 2.0 edition of my [PowerShell Network Security Toolkit](https://github.com/EdwardOconnell/powershell-network-security-toolkit).
 
-The main toolkit targets PowerShell 7 and relies on the `Net*` cmdlets (`Get-NetAdapter`, `Get-NetFirewallRule`), which only exist on Windows 8 and later. This edition rebuilds the core checks with WMI, COM and `netsh firewall` so they run on XP. It also adds a one-command hardening baseline based on locking down a real XP laptop, an all-in-one daily check, a threat check that shows which current attacks the PC is exposed to and looks for signs of malware, and a security assistant that explains the findings and says what to fix first.
+The main toolkit targets PowerShell 7 and relies on the `Net*` cmdlets (`Get-NetAdapter`, `Get-NetFirewallRule`), which only exist on Windows 8 and later. This edition rebuilds the core checks with WMI, COM and `netsh firewall` so they run on XP. It also adds a one-command hardening baseline based on locking down a real XP laptop, an all-in-one daily check, a threat check that shows which current attacks the PC is exposed to and looks for signs of malware, a root certificate update that cuts down HTTPS certificate errors, and a security assistant that explains the findings and says what to fix first.
 
 **Easiest way to run it:** download the release zip, copy it to the XP machine, extract it and double-click **`NetSecToolkitXP.exe`**. A numbered menu opens, with no execution policy changes, `Import-Module` or typing needed. See [Run it with NetSecToolkitXP.exe](#run-it-with-netsectoolkitxpexe).
 
-Everything is read-only except `Set-XPHardening` (which supports `-WhatIf`) and `Set-XPAssistantConfig` (which only saves the assistant's settings).
+Everything is read-only except `Set-XPHardening` and `Update-XPRootCertificate` (both support `-WhatIf`), and `Set-XPAssistantConfig` (which only saves the assistant's settings).
 
 ## Commands
 
@@ -29,6 +29,8 @@ Everything is read-only except `Set-XPHardening` (which supports `-WhatIf`) and 
 | `Get-USBHistoryXP` | Every USB storage device ever connected (model and serial, from `USBSTOR`), and whether USB storage is blocked. |
 | `Get-ThreatExposureXP` | Rates the PC **Protected / Partly / Exposed** against the attacks that still hit XP (WannaCry, Conficker, BlueKeep, USB worms, password guessing and theft, web/email ransomware), from its real patches and settings. |
 | `Find-MalwareIndicatorXP` | Looks for signs of infection where XP malware hides (startup entries, Winlogon and IFEO hijacks, AppInit_DLLs, Temp/RECYCLER programs, hosts file, autorun.inf, scheduled tasks), checks the antivirus, and exports a SHA-256 + VirusTotal link for every program it looked at. |
+| `Get-RootCertStatusXP` | Compares XP's Trusted Root store with today's root certificates (the RSA roots on Mozilla's CA list) and checks for TLS 1.2 support (KB4019276). |
+| `Update-XPRootCertificate` | Adds the missing root certificates, so Internet Explorer, Windows Update and PowerShell trust the authorities that sign today's HTTPS sites. Supports `-WhatIf` and `-Remove`. |
 | `Invoke-XPSecurityCheck` | Runs all of the checks above in one go, flags devices and USB drives that are new since the last run, and saves a transcript, an HTML report and a snapshot. |
 | `Invoke-XPAssistant` (alias `xpai`) | Security assistant: explains findings, answers questions and builds a fix order. Works offline; can also ask Claude through a relay on a modern PC. See [Security assistant](#security-assistant). |
 | `Set-XPAssistantConfig` | Saves the relay address and token for the assistant's Claude mode. |
@@ -46,13 +48,15 @@ The repo also has `relay\Start-ClaudeRelay.ps1`, which runs on the modern host P
 
 ## Run it with NetSecToolkitXP.exe
 
-1. Download `NetSecToolkitXP-0.5.1.zip` from the [Releases](../../releases) page (or the repo zip), and copy it to the XP machine.
+1. Download `NetSecToolkitXP-0.5.2.zip` from the [Releases](../../releases) page (or the repo zip), and copy it to the XP machine.
 2. Extract it. Keep `NetSecToolkitXP.exe` and the `NetSecToolkitXP` folder together.
-3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for option H.
+3. Double-click **`NetSecToolkitXP.exe`**. Log on as an administrator for options H and C.
 
 ![NetSecToolkitXP.exe 0.5.1 menu running on Windows XP SP3](docs/images/exe-menu-0.5.1.png)
 
 **Option H** always shows the `-WhatIf` preview first and changes nothing until you type `YES`. You can type `S` to name steps to leave alone; unknown step names cancel the run. Then it offers to restart.
+
+**Option C** shows which root certificates are missing (the same check as option **T**), then adds them only after you type `YES`. See [Root certificates](#root-certificates-get-rootcertstatusxp-and-update-xprootcertificate).
 
 How the .exe works:
 
@@ -233,6 +237,35 @@ Get-ThreatExposureXP
 Find-MalwareIndicatorXP -ExportPath C:\hashes.csv
 ```
 
+### Root certificates: `Get-RootCertStatusXP` and `Update-XPRootCertificate`
+
+Menu option **T** runs the check, option **C** runs the update, and `Invoke-XPSecurityCheck` (option 1) includes the check.
+
+XP's list of trusted certificate authorities stopped updating years ago, so Internet Explorer says *"There is a problem with this website's security certificate"* on sites signed by newer authorities such as Let's Encrypt. The toolkit ships the current roots in `NetSecToolkitXP\RootCerts`:
+
+- **Where they come from:** Mozilla's CA list (certifi 2026.10.23), the same list Firefox and most Linux systems trust.
+- **79 of its 118 roots:** only the RSA ones. The other 39 use ECC keys, which XP can't read, so leaving them out changes nothing.
+- **Also in the folder:** `RootCerts.csv` lists every root's SHA-1 thumbprint and expiry, and `XP-RootCerts.p7b` is the same set for a manual import with `mmc`.
+
+`Update-XPRootCertificate` adds the missing roots to the Local Computer **Trusted Root Certification Authorities** store:
+
+- **Adds only:** roots that are already there or expired are skipped, and nothing is replaced.
+- **Logs what changed:** the list is saved to `My Documents\SecurityChecks\RootCerts_<time>.txt`.
+- **Can be undone:** `-Remove` takes the listed roots back out.
+
+**Root certificates are only half of the problem.** Most sites also require TLS 1.2, which XP SP3 doesn't have out of the box:
+
+- **What the check reports:** `Get-RootCertStatusXP` says whether the POSReady update **KB4019276** (TLS 1.1/1.2 for XP) is installed. [Legacy Update](https://legacyupdate.net) installs it.
+- **What still won't work:** even with KB4019276, XP lacks the newer ciphers, so some sites still won't load in IE.
+- **What works best:** a browser with its own TLS and certificates, such as Supermium.
+
+```powershell
+Get-RootCertStatusXP
+Update-XPRootCertificate -WhatIf
+Update-XPRootCertificate
+Update-XPRootCertificate -Remove
+```
+
 ### `Set-XPHardening`
 
 Applies the baseline. Run it in an Administrator window, preview with `-WhatIf` first, and reboot afterward. See [Hardening a machine](#hardening-a-machine) for the full walkthrough and the list of steps.
@@ -405,6 +438,7 @@ All real-machine testing so far has been on one VM:
 | 0.3.1 | Not yet on its own | Its changes are included in 0.4.0 |
 | 0.5.0 | `NetSecToolkitXP.exe` 0.5.0, double-clicked on the VM | Opened the 0.5.0 menu with the new option V; the threat check itself is tested on mocks (clean, hardened, infected), VM run pending |
 | 0.5.1 | `NetSecToolkitXP.exe` 0.5.1 on the VM | Menu shows version 0.5.1 and the copyright line |
+| 0.5.2 | Not yet | Root certificate options T and C tested on mocks; VM run pending |
 
 ### 0.2.2: hardening run
 
@@ -489,6 +523,7 @@ Double-clicked from the extracted release zip on the VM. With no execution polic
 - [ ] 0.4.0: after option H and a reboot, run option 1 (full check). Expected result: 0 risks, 0 warnings.
 - [ ] 0.4.0: option A (assistant) from the menu.
 - [ ] 0.5.0: option V (threat check), and open `Hashes_<time>.csv` on the host to try the VirusTotal links.
+- [ ] 0.5.2: option T, then option C, then option T again (expected: all 79 roots installed), and an HTTPS site in Internet Explorer before and after.
 - [ ] Claude mode against the live API, through `relay/Start-ClaudeRelay.ps1`.
 
 ## External verification
@@ -573,6 +608,13 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
   - **Real PowerShell:** the same command line loads the module.
   - **Menu:** driven on mocks through every path: preview then cancel, `S` with a skip list then `YES`, an unknown step name, no report yet, the device sweep prompt, the assistant, and an invalid choice.
   - **On the XP VM:** the .exe opened the menu and option H ran. See [Results by version](#results-by-version).
+- **0.5.2 root certificates**, tested on mocks against a real .NET certificate store:
+  - **Install:** an empty store showed 79 missing; option C cancelled on Enter, added all 79 after `YES`, and then reported nothing to add.
+  - **Re-run and undo:** a second update added 0 (79 already installed), `-WhatIf` changed nothing, and `-Remove` took all 79 back out.
+  - **The full check:** it includes the new section, with KB4019276 tested both present and missing.
+  - **The assistant:** it answers certificate and TLS 1.2 questions.
+  - **A missing `RootCerts` folder:** reported, not crashed.
+  - **The certificate files:** all parse, and the .p7b holds all 79.
 - Files are pure ASCII with CRLF line endings, so PS 2.0 reads them correctly and they open cleanly in XP's Notepad.
 - Recommended: test in an XP SP3 VM using **NAT or Host-only networking** (never Bridged), with a snapshot taken before running `Set-XPHardening`.
 
@@ -585,6 +627,7 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 - `Test-RouterExposureXP` checks one port at a time (PS 2.0 has no `-Parallel`), about 13 seconds worst case. A router that ignores SSDP from this PC shows UPnP as off.
 - Claude mode needs a modern PC running the relay and an Anthropic API key; the offline assistant needs neither.
 - `NetSecToolkitXP.exe` isn't code-signed, so downloading it on a modern PC may bring up a SmartScreen or antivirus warning. The source and build script are in `launcher/`, and `NetSecToolkitXP.cmd` is the fallback.
+- The root certificate update fixes certificate errors only. Sites that require TLS 1.2 also need KB4019276, and some still fail in IE because XP lacks the newer ciphers. Firefox-based browsers and Supermium use their own certificate lists, so they don't need it.
 - Firewall logging is a single setting for all profiles on XP, read from `netsh firewall show logging`.
 - DHCP lease times use `System.Management`; if one shows blank, `ipconfig /all` has it.
 
@@ -596,6 +639,9 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 
 ## Changelog
 
+- **0.5.2:**
+  - **Root certificates:** `Get-RootCertStatusXP` (menu option **T**) checks the Trusted Root store and TLS 1.2 support, and `Update-XPRootCertificate` (menu option **C**) adds the 79 RSA roots from Mozilla's current CA list, shipped in `NetSecToolkitXP\RootCerts`.
+  - **Where else it shows up:** the full check (option 1) includes the certificate check, and the assistant has a new topic on certificates, HTTPS errors and TLS 1.2.
 - **0.5.1:** the copyright (`Copyright Edward O'Connell III 2026`) now shows in the menu, at the top of the full check, at the bottom of HTML reports, in the .exe's file properties and in the module manifest.
 - **0.5.0:**
   - **Threat check:** `Get-ThreatExposureXP` rates exposure to current XP threats, and `Find-MalwareIndicatorXP` looks for signs of infection, checks the antivirus, and exports SHA-256 hashes with VirusTotal links.

@@ -1,16 +1,18 @@
-NetSecToolkitXP 0.5.1
+NetSecToolkitXP 0.5.2
 =====================
 Copyright Edward O'Connell III 2026
 
 Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit, with a security
 assistant. Everything is read-only except Set-XPHardening, which applies
-the hardening baseline (use -WhatIf first to preview it), and
+the hardening baseline (use -WhatIf first to preview it),
+Update-XPRootCertificate, which adds root certificates, and
 Set-XPAssistantConfig, which only saves the assistant's settings.
 
 Easiest: double-click NetSecToolkitXP.exe (keep it next to this
 NetSecToolkitXP folder). It opens a numbered menu: 1 = full check,
-V = virus and threat check,
+V = virus and threat check, T = root certificates and TLS 1.2,
 H = harden (preview first, applies only after you type YES),
+C = update root certificates (only after you type YES),
 A = assistant, Q = quit. No Set-ExecutionPolicy or Import-Module needed.
 If an antivirus blocks the .exe, double-click NetSecToolkitXP.cmd instead.
 
@@ -165,6 +167,30 @@ Find-MalwareIndicatorXP  Not an antivirus: looks for signs of infection where
                          links to check from a modern PC.
                          -ExportPath file.csv   save the hashes
 
+Get-RootCertStatusXP     Compares the Trusted Root store with the root
+                         certificates in the RootCerts folder (the 79 RSA
+                         roots on Mozilla's CA list, certifi 2026.10.23;
+                         XP cannot use the ECC ones) and checks for
+                         KB4019276 (TLS 1.1/1.2 for XP).
+
+Update-XPRootCertificate Adds the missing roots to the Local Computer
+                         Trusted Root store, so Internet Explorer, Windows
+                         Update and PowerShell trust today's HTTPS sites.
+                         Skips roots already there; replaces nothing.
+                         Saves a list to My Documents\SecurityChecks.
+                         Needs an Administrator window.
+                         -WhatIf                preview, change nothing
+                         -Remove                undo (removes the listed
+                                                roots, including any XP
+                                                already had)
+                         Roots fix certificate errors only. Sites that need
+                         TLS 1.2 also need KB4019276 (Legacy Update installs
+                         it); a browser with its own TLS, such as
+                         Supermium, works best. The RootCerts folder also
+                         has XP-RootCerts.p7b for a manual import (mmc >
+                         Certificates > Computer account > Trusted Root >
+                         Import) and RootCerts.csv with every thumbprint.
+
 Start-NetSecToolkitXP    The numbered menu NetSecToolkitXP.exe opens.
 
 Set-XPAssistantConfig    Saves the relay address/token for Claude mode.
@@ -258,6 +284,10 @@ Testing and known limits
 
 Changes
 -------
+0.5.2  Root certificates: Get-RootCertStatusXP (menu option T, and part
+       of Invoke-XPSecurityCheck) and Update-XPRootCertificate (menu
+       option C). Ships the 79 RSA roots from Mozilla's CA list in
+       RootCerts. Assistant topic: certificates, HTTPS errors, TLS 1.2.
 0.5.1  Copyright Edward O'Connell III 2026 shown in the menu, the full
        check, HTML reports, the .exe properties and the manifest.
 0.5.0  Threat check (menu option V, and part of Invoke-XPSecurityCheck):

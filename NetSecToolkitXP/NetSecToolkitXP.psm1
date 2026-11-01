@@ -1,4 +1,4 @@
-# NetSecToolkitXP 0.5.1 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
+# NetSecToolkitXP 0.5.2 - Windows XP SP3 / PowerShell 2.0 build of NetSecToolkit.
 # Copyright Edward O'Connell III 2026
 # Written for PS 2.0 only: no [pscustomobject], [ordered], -in, member
 # enumeration, simplified Where-Object syntax, or Win8+ Net* cmdlets.
@@ -23,7 +23,7 @@ $script:RiskyPorts = @{
 
 $script:Ipv4Pattern = '^\d{1,3}(\.\d{1,3}){3}$'
 
-$script:ToolkitVersion = '0.5.1'
+$script:ToolkitVersion = '0.5.2'
 $script:Copyright = "Copyright Edward O'Connell III 2026"
 
 # Findings from the last run of each audit command, keyed by command name.
@@ -31,6 +31,13 @@ $script:Copyright = "Copyright Edward O'Connell III 2026"
 $script:LastRun = @{}
 
 $script:LsaPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'
+
+# Root certificates (0.5.2): shipped in the RootCerts folder next to this file.
+$script:ModuleBase = $PSScriptRoot
+if (-not $script:ModuleBase) { $script:ModuleBase = Split-Path -Parent $MyInvocation.MyCommand.Path }
+$script:RootCertSource = 'Mozilla CA list, certifi 2026.10.23'
+$script:RootStoreName = 'Root'
+$script:RootStoreLocation = 'LocalMachine'
 
 #endregion
 
@@ -2038,7 +2045,8 @@ function Invoke-XPSecurityCheck {
     Runs, in order: Get-XPHardeningStatus, Get-AccountAuditXP,
     Get-NetAdapterHealthXP, Get-FirewallLogXP, Find-NetworkDeviceXP (ARP
     cache only unless -ActiveScan), Test-RouterExposureXP, Get-USBHistoryXP,
-    Get-ThreatExposureXP and Find-MalwareIndicatorXP. Then it flags devices and USB drives that are new
+    Get-ThreatExposureXP, Get-RootCertStatusXP and Find-MalwareIndicatorXP.
+    Then it flags devices and USB drives that are new
     since the last check, prints a summary and the assistant's fix order,
     and saves a transcript, an HTML report and a snapshot to ReportDir.
     Read-only: it changes no settings.
@@ -2152,6 +2160,12 @@ function Invoke-XPSecurityCheck {
 
         $exposure = Get-ThreatExposureXP -PassThru
         if ($exposure) { $all += @($exposure.Findings) }
+        try {
+            $certs = Get-RootCertStatusXP -PassThru
+            if ($certs) { $all += @($certs.Findings) }
+        } catch {
+            $extra += New-Finding -Area 'Certificates' -Level 'Info' -Message ('Root certificate check skipped: ' + $_.Exception.Message)
+        }
         $hashFile = $null
         if (-not $NoReport) { $hashFile = Join-Path $ReportDir ('Hashes_' + $stamp + '.csv') }
         $mal = Find-MalwareIndicatorXP -ExportPath $hashFile -PassThru
@@ -2394,12 +2408,16 @@ $script:AssistantKB = @(
        Do = 'Set-XPHardening -WhatIf' },
     @{ Id = 'daily'; Title = 'The all-in-one check and its reports'
        Words = @('daily', 'daily check', 'security check', 'report', 'reports', 'invoke-xpsecuritycheck', 'baseline')
-       Text = 'Invoke-XPSecurityCheck runs every check in one go: hardening status, accounts, adapters, the firewall log, devices on the network, the router and USB history. It saves a text transcript, an HTML report and a snapshot to My Documents\SecurityChecks. The snapshot is how the next run spots new devices and USB drives. Add -ActiveScan to ping-sweep the subnet as well.'
+       Text = 'Invoke-XPSecurityCheck runs every check in one go: hardening status, accounts, adapters, the firewall log, devices on the network, the router, USB history, threats and root certificates. It saves a text transcript, an HTML report and a snapshot to My Documents\SecurityChecks. The snapshot is how the next run spots new devices and USB drives. Add -ActiveScan to ping-sweep the subnet as well.'
        Do = 'Invoke-XPSecurityCheck' },
     @{ Id = 'assistant'; Title = 'This assistant and Claude mode'
        Words = @('assistant', 'claude', 'relay', 'api key', 'ai', 'offline mode', 'claude mode')
        Text = 'This assistant has two modes. Offline (the default) uses notes built into the module and sends nothing anywhere. Claude mode sends your question and the loaded findings to Claude through a relay script on a modern PC, because XP cannot make the TLS 1.2 connections the Claude API needs. The API key stays on that PC; XP only gets a relay token. Setup: run relay\Start-ClaudeRelay.ps1 on the host (PowerShell 7), then on XP run Set-XPAssistantConfig -RelayUrl <address> -RelayToken <token> -Test.'
        Do = 'Set-XPAssistantConfig -RelayUrl http://<host>:8787 -RelayToken <token> -Test' },
+    @{ Id = 'certs'; Title = 'Root certificates, HTTPS errors and TLS 1.2'
+       Words = @('certificate', 'certificates', 'root cert', 'root certs', 'https', 'ssl', 'tls', 'tls 1.2', 'security certificate', 'kb4019276', 'supermium', 'legacy update', 'website error')
+       Text = 'Windows XP stopped getting new root certificates years ago, so Internet Explorer says "There is a problem with this website''s security certificate" on sites signed by newer authorities such as Let''s Encrypt. Update-XPRootCertificate (menu option C) adds the RSA roots from Mozilla''s current CA list to the Local Computer Trusted Root store; XP cannot use the ECC roots, so they are left out. Roots are only half of it: most sites also require TLS 1.2, which XP only gets from the POSReady update KB4019276 (Legacy Update installs it), and even then XP lacks the newer ciphers. A browser with its own TLS and certificates, such as Supermium, works best. Update-XPRootCertificate -Remove undoes the change. Only add root certificates from a source you trust: a rogue root lets someone fake any website.'
+       Do = 'Get-RootCertStatusXP, then Update-XPRootCertificate (menu option C)' },
     @{ Id = 'vm'; Title = 'Testing in a VM'
        Words = @('vmware', 'virtual machine', 'vm', 'host-only', 'vmnet', 'snapshot')
        Text = 'On a VM, take a snapshot before Set-XPHardening so any change can be undone in seconds. A host-only network (VMnet1 in VMware) keeps XP off the internet but still lets it reach the host, which is where the Claude relay runs. NAT (VMnet8) gives XP internet access through the host. The toolkit''s own snapshots (Invoke-XPSecurityCheck) are different: they are saved device and USB lists.'
@@ -3609,6 +3627,217 @@ function Get-ThreatExposureXP {
 
 #endregion
 
+#region Root certificates (0.5.2)
+
+function Get-RootCertDir {
+    return (Join-Path $script:ModuleBase 'RootCerts')
+}
+
+function Get-BundledRootCert {
+    # The root certificates shipped in the RootCerts folder.
+    $dir = Get-RootCertDir
+    $out = @()
+    foreach ($f in @(Get-ChildItem -Path $dir -Filter '*.cer' -ErrorAction SilentlyContinue | Sort-Object Name)) {
+        try {
+            $c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList $f.FullName
+            $out += New-Object PSObject -Property @{ Name = $f.BaseName; Thumbprint = $c.Thumbprint.ToUpper(); NotAfter = $c.NotAfter; Cert = $c }
+        } catch { }
+    }
+    return $out
+}
+
+function Open-RootStore {
+    param([switch]$Write)
+    $loc = [System.Security.Cryptography.X509Certificates.StoreLocation]$script:RootStoreLocation
+    $store = New-Object System.Security.Cryptography.X509Certificates.X509Store -ArgumentList $script:RootStoreName, $loc
+    if ($Write) {
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    } else {
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+    }
+    return $store
+}
+
+function Get-RootCertStatusXP {
+<#
+.SYNOPSIS
+    Checks whether this PC has today's root certificates and TLS 1.2.
+.DESCRIPTION
+    Compares the Local Computer Trusted Root store with the root certificates
+    that ship with the toolkit (the RSA roots from Mozilla's current CA list;
+    XP cannot use the ECC ones), and checks for KB4019276, the POSReady
+    update that gives XP TLS 1.1 and 1.2. Missing roots make Internet
+    Explorer and Windows show certificate errors on HTTPS sites that are
+    fine. Changes nothing; Update-XPRootCertificate adds the missing roots.
+.PARAMETER PassThru
+    Also return the counts and findings as an object.
+.EXAMPLE
+    Get-RootCertStatusXP
+#>
+    [CmdletBinding()]
+    param([switch]$PassThru)
+
+    Write-Section 'Root certificates and HTTPS'
+    $findings = @()
+    $bundle = @(Get-BundledRootCert)
+    $missing = @()
+    $storeCount = 0
+    if ($bundle.Length -eq 0) {
+        $findings += New-Finding -Area 'Certificates' -Level 'Info' -Message ('The toolkit''s RootCerts folder is missing or empty ({0}), so root certificates were not checked.' -f (Get-RootCertDir)) -Fix 'Copy the whole NetSecToolkitXP folder from the zip again'
+    } else {
+        $installed = @{}
+        $expired = 0
+        $readOk = $true
+        try {
+            $store = Open-RootStore
+            foreach ($c in $store.Certificates) {
+                $installed[$c.Thumbprint.ToUpper()] = $true
+                $storeCount++
+                if ($c.NotAfter -lt (Get-Date)) { $expired++ }
+            }
+            $store.Close()
+        } catch {
+            $readOk = $false
+            $findings += New-Finding -Area 'Certificates' -Level 'Info' -Message ('Could not read the Trusted Root store: ' + $_.Exception.Message)
+        }
+        if ($readOk) {
+            $missing = @($bundle | Where-Object { -not $installed.ContainsKey($_.Thumbprint) })
+            if ($missing.Length -eq 0) {
+                $findings += New-Finding -Area 'Certificates' -Level 'OK' -Message ('All {0} current root certificates ({1}) are installed.' -f $bundle.Length, $script:RootCertSource)
+            } else {
+                $findings += New-Finding -Area 'Certificates' -Level 'Warn' -Message ('{0} of {1} current root certificates are missing, so Internet Explorer and Windows can show certificate errors on HTTPS sites that are fine.' -f $missing.Length, $bundle.Length) -Fix 'Update-XPRootCertificate (menu option C); it only adds root certificates'
+                $names = @($missing | Select-Object -First 6 | ForEach-Object { $_.Name -replace '_', ' ' })
+                $more = ''
+                if ($missing.Length -gt 6) { $more = (' and {0} more' -f ($missing.Length - 6)) }
+                Write-Host ('         Missing: {0}{1}' -f ($names -join ', '), $more) -ForegroundColor DarkGray
+            }
+            if ($expired -gt 0) {
+                $findings += New-Finding -Area 'Certificates' -Level 'Info' -Message ('{0} of the {1} roots already in the store have expired. Windows ignores expired roots, so they do no harm.' -f $expired, $storeCount)
+            }
+        }
+    }
+
+    $kb = Get-WmiObject -Class Win32_QuickFixEngineering -Filter "HotFixID='KB4019276'" -ErrorAction SilentlyContinue
+    $tls12 = [bool]$kb
+    if ($tls12) {
+        $findings += New-Finding -Area 'Certificates' -Level 'OK' -Message 'KB4019276 is installed, so Windows can use TLS 1.1 and 1.2. If a site still fails in Internet Explorer, turn on TLS 1.2 under Internet Options > Advanced.'
+    } else {
+        $findings += New-Finding -Area 'Certificates' -Level 'Info' -Message 'KB4019276 was not found, so Windows and Internet Explorer only have TLS 1.0, which most HTTPS sites no longer accept. Root certificates alone will not fix those sites.' -Fix 'Legacy Update (legacyupdate.net) installs KB4019276; or use a browser with its own TLS, such as Supermium'
+    }
+
+    Save-RunFindings -Name 'Get-RootCertStatusXP' -Findings $findings
+    if ($PassThru) {
+        New-Object PSObject -Property @{ Bundled = $bundle.Length; Missing = $missing.Length; InStore = $storeCount; Tls12 = $tls12; Findings = $findings }
+    }
+}
+
+function Update-XPRootCertificate {
+<#
+.SYNOPSIS
+    Adds today's root certificates to Windows XP's Trusted Root store.
+.DESCRIPTION
+    Adds the root certificates that ship with the toolkit (the RSA roots from
+    Mozilla's current CA list, in the RootCerts folder) to the Local Computer
+    "Trusted Root Certification Authorities" store, so Internet Explorer,
+    Windows Update and PowerShell trust the authorities that sign today's
+    HTTPS sites. Roots that are already there, or expired, are skipped.
+    Nothing is replaced or removed. Needs an administrator window. A list of
+    what changed is saved to My Documents\SecurityChecks.
+    Most sites also need TLS 1.2: see Get-RootCertStatusXP.
+.PARAMETER Remove
+    Remove the roots this toolkit ships (undo). Roots XP already had that
+    are also on the list are removed too.
+.PARAMETER PassThru
+    Also return the result for each certificate.
+.EXAMPLE
+    Update-XPRootCertificate -WhatIf
+.EXAMPLE
+    Update-XPRootCertificate
+.EXAMPLE
+    Update-XPRootCertificate -Remove
+#>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param([switch]$Remove, [switch]$PassThru)
+
+    if ((-not $WhatIfPreference) -and ($script:RootStoreLocation -eq 'LocalMachine') -and (-not (Test-IsAdmin))) {
+        throw 'Update-XPRootCertificate must run in an Administrator window: it writes the Local Computer root store.'
+    }
+    $bundle = @(Get-BundledRootCert)
+    if ($bundle.Length -eq 0) {
+        throw ('No root certificates found in {0}. Copy the whole NetSecToolkitXP folder from the zip again.' -f (Get-RootCertDir))
+    }
+
+    if ($Remove) { Write-Section 'Removing the toolkit''s root certificates' } else { Write-Section 'Adding current root certificates' }
+    Write-Host ('  {0} roots from the {1}. Store: {2}\{3}' -f $bundle.Length, $script:RootCertSource, $script:RootStoreLocation, $script:RootStoreName) -ForegroundColor DarkGray
+
+    $store = Open-RootStore -Write:(-not $WhatIfPreference)
+    $existing = @{}
+    foreach ($c in $store.Certificates) { $existing[$c.Thumbprint.ToUpper()] = $c }
+    $now = Get-Date
+    $results = @()
+    try {
+        foreach ($b in $bundle) {
+            $status = ''
+            if ($Remove) {
+                if (-not $existing.ContainsKey($b.Thumbprint)) { $status = 'NotInstalled' }
+                elseif ($PSCmdlet.ShouldProcess($b.Name, 'Remove from the Trusted Root store')) {
+                    try { $store.Remove($existing[$b.Thumbprint]); $status = 'Removed' } catch { $status = 'Failed: ' + $_.Exception.Message }
+                } else { $status = 'WhatIf' }
+            } else {
+                if ($existing.ContainsKey($b.Thumbprint)) { $status = 'Present' }
+                elseif ($b.NotAfter -lt $now) { $status = 'Expired' }
+                elseif ($PSCmdlet.ShouldProcess($b.Name, 'Add to the Trusted Root store')) {
+                    try { $store.Add($b.Cert); $status = 'Added' } catch { $status = 'Failed: ' + $_.Exception.Message }
+                } else { $status = 'WhatIf' }
+            }
+            if ($status -eq 'Added') { Write-Host ('  added    ' + ($b.Name -replace '_', ' ')) -ForegroundColor Green }
+            elseif ($status -eq 'Removed') { Write-Host ('  removed  ' + ($b.Name -replace '_', ' ')) -ForegroundColor Yellow }
+            elseif ($status -like 'Failed*') { Write-Host ('  FAILED   ' + ($b.Name -replace '_', ' ') + ' (' + $status.Substring(8) + ')') -ForegroundColor Red }
+            $results += New-Object PSObject -Property @{ Name = $b.Name; Thumbprint = $b.Thumbprint; Status = $status }
+        }
+    } finally {
+        $store.Close()
+    }
+    $results = @($results | Select-Object Name, Thumbprint, Status)
+
+    $count = @{}
+    foreach ($r in $results) {
+        $k = ($r.Status -split ':')[0]
+        if ($count.ContainsKey($k)) { $count[$k]++ } else { $count[$k] = 1 }
+    }
+    $get = { param($k) if ($count.ContainsKey($k)) { $count[$k] } else { 0 } }
+    Write-Host ''
+    if ($WhatIfPreference) {
+        $verb = 'add'
+        if ($Remove) { $verb = 'remove' }
+        Write-Host ('  Would {0} {1} root certificate(s). Nothing was changed.' -f $verb, (& $get 'WhatIf')) -ForegroundColor Cyan
+    } elseif ($Remove) {
+        Write-Host ('  Removed {0}, not installed {1}, failed {2}.' -f (& $get 'Removed'), (& $get 'NotInstalled'), (& $get 'Failed')) -ForegroundColor Cyan
+    } else {
+        Write-Host ('  Added {0}, already installed {1}, expired {2}, failed {3}.' -f (& $get 'Added'), (& $get 'Present'), (& $get 'Expired'), (& $get 'Failed')) -ForegroundColor Cyan
+    }
+
+    $changed = @($results | Where-Object { ($_.Status -eq 'Added') -or ($_.Status -eq 'Removed') })
+    if ($changed.Length -gt 0) {
+        try {
+            $dir = Get-DefaultReportDir
+            if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
+            $log = Join-Path $dir ('RootCerts_' + (Get-Date -Format 'yyyy-MM-dd_HHmmss') + '.txt')
+            $lines = @(('NetSecToolkitXP {0} root certificate update, {1}. {2}' -f $script:ToolkitVersion, (Get-Date), $script:Copyright))
+            foreach ($r in $changed) { $lines += ('{0}  {1}  {2}' -f $r.Status, $r.Thumbprint, $r.Name) }
+            Set-Content -Path $log -Value $lines
+            Write-Host ('  List saved to ' + $log) -ForegroundColor DarkGray
+        } catch { }
+        if (-not $Remove) {
+            Write-Host '  Close and reopen Internet Explorer so it picks up the new roots.' -ForegroundColor DarkGray
+            Write-Host '  Sites that need TLS 1.2 also need KB4019276 (Legacy Update) or a browser such as Supermium.' -ForegroundColor DarkGray
+        }
+    }
+    if ($PassThru) { $results }
+}
+
+#endregion
+
 #region Menu (0.4.0)
 
 function Set-ConsoleWidth {
@@ -3690,6 +3919,30 @@ function Invoke-MenuHardening {
     }
 }
 
+function Invoke-MenuRootCerts {
+    # Shows what is missing, then adds the roots only after the user types YES.
+    $status = Get-RootCertStatusXP -PassThru
+    if ($status.Bundled -eq 0) { return }
+    if ($status.Missing -eq 0) {
+        Write-Host ''
+        Write-Host '  Nothing to add: every root certificate the toolkit ships is already installed.' -ForegroundColor Green
+        return
+    }
+    if (-not (Test-IsAdmin)) {
+        Write-Finding -Level 'Warn' -Message 'Adding root certificates needs an administrator account. Log on as an administrator and run NetSecToolkitXP.exe again.'
+        return
+    }
+    Write-Host ''
+    Write-Host ('  This adds {0} root certificate(s) to the Local Computer Trusted Root store.' -f $status.Missing) -ForegroundColor Cyan
+    Write-Host '  Nothing else changes. To undo later: Update-XPRootCertificate -Remove (option P).' -ForegroundColor Cyan
+    $answer = Read-MenuAnswer 'Type YES to add them, or press Enter to cancel'
+    if ($answer -ne 'YES') {
+        Write-Host '  Cancelled. Nothing was changed.' -ForegroundColor Yellow
+        return
+    }
+    Update-XPRootCertificate
+}
+
 function Open-LastReport {
     $dir = Get-DefaultReportDir
     $last = @(Get-ChildItem -Path $dir -Filter 'Report_*.html' -ErrorAction SilentlyContinue | Sort-Object Name -Descending) | Select-Object -First 1
@@ -3707,7 +3960,7 @@ function Show-ToolkitMenu {
     Write-Host (' NetSecToolkitXP {0} - Windows XP security toolkit' -f $script:ToolkitVersion) -ForegroundColor Cyan
     Write-Host (' ' + $script:Copyright) -ForegroundColor DarkGray
     $admin = 'yes'
-    if (-not (Test-IsAdmin)) { $admin = 'NO (checks only; option H needs an administrator)' }
+    if (-not (Test-IsAdmin)) { $admin = 'NO (checks only; options H and C need an administrator)' }
     Write-Host (' Computer: {0}   User: {1}   Administrator: {2}' -f $env:COMPUTERNAME, $env:USERNAME, $admin) -ForegroundColor DarkGray
     Write-Host ('=' * 60) -ForegroundColor DarkCyan
     Write-Host '  Checks (change nothing)' -ForegroundColor White
@@ -3721,8 +3974,10 @@ function Show-ToolkitMenu {
     Write-Host '    8  Network adapters and connectivity'
     Write-Host '    9  USB storage history'
     Write-Host '    V  Virus and threat check (what this PC is exposed to, signs of malware)'
+    Write-Host '    T  Root certificates and TLS 1.2 (why HTTPS sites fail)'
     Write-Host '  Fix' -ForegroundColor White
     Write-Host '    H  Harden this PC (shows a preview first)'
+    Write-Host '    C  Update root certificates (fewer HTTPS certificate errors)'
     Write-Host '  Help' -ForegroundColor White
     Write-Host '    A  Ask the assistant (what to fix first, what a finding means)'
     Write-Host '    R  Open the last report'
@@ -3736,7 +3991,8 @@ function Start-NetSecToolkitXP {
     Menu for the whole toolkit. NetSecToolkitXP.exe opens this.
 .DESCRIPTION
     Shows a numbered menu of the checks, the hardening run (always previewed
-    first and applied only after you type YES), the assistant and the last
+    first and applied only after you type YES), the root certificate update
+    (also only after YES), the assistant and the last
     report, so the toolkit can be used without typing commands. Errors in
     one option are shown and the menu carries on.
 .EXAMPLE
@@ -3774,7 +4030,9 @@ function Start-NetSecToolkitXP {
                     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
                     Find-MalwareIndicatorXP -ExportPath (Join-Path $dir ('Hashes_' + (Get-Date -Format 'yyyy-MM-dd_HHmm') + '.csv'))
                 }
+                'T' { Get-RootCertStatusXP }
                 'H' { Invoke-MenuHardening }
+                'C' { Invoke-MenuRootCerts }
                 'A' { Invoke-XPAssistant; $wait = $false }
                 'R' { Open-LastReport }
                 'P' {
@@ -3800,4 +4058,5 @@ function Start-NetSecToolkitXP {
 Export-ModuleMember -Function Get-NetAdapterHealthXP, Get-FirewallAuditXP, Find-NetworkDeviceXP,
     Set-XPHardening, Get-XPHardeningStatus, Get-AccountAuditXP, Get-FirewallLogXP,
     Test-RouterExposureXP, Get-USBHistoryXP, Invoke-XPSecurityCheck, Invoke-XPAssistant,
-    Set-XPAssistantConfig, Start-NetSecToolkitXP, Get-ThreatExposureXP, Find-MalwareIndicatorXP -Alias xpai
+    Set-XPAssistantConfig, Start-NetSecToolkitXP, Get-ThreatExposureXP, Find-MalwareIndicatorXP,
+    Get-RootCertStatusXP, Update-XPRootCertificate -Alias xpai
