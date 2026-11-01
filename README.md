@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/eds-logo.png" alt="Edward O'Connell, Cyber Security Professional" width="560">
+</p>
+
 # NetSecToolkitXP
 
 ![PowerShell 2.0](https://img.shields.io/badge/PowerShell-2.0-blue) ![Windows XP SP3](https://img.shields.io/badge/Windows-XP%20SP3-green) ![Version 0.5.1](https://img.shields.io/badge/version-0.5.1-lightgrey)
@@ -625,6 +629,22 @@ An all-blocked result would look the same if the VM were simply unreachable, so 
 ## Disclaimer
 
 Use this only on systems you own or are authorized to manage. Windows XP has been unsupported since 2014. Hardening reduces the network attack surface, but it doesn't make XP safe for everyday internet use. Keep XP machines off untrusted networks.
+
+## About me
+
+<p align="center">
+  <img src="assets/footer-logo.png" alt="Edward O'Connell EO shield logo" width="180">
+</p>
+
+I'm Edward O'Connell III, an IT professional in Las Vegas focused on cybersecurity, networking and Windows systems. I build practical PowerShell security tools and test them in my own lab, including tools for legacy machines like Windows XP that people still rely on and that still need protecting.
+
+**Qualifications**
+
+- **Certifications:** CompTIA Security+ (2025), CompTIA A+ (2025), Cisco CCNA (2022)
+- **Education:** A.A.S. in Computer & Information Technology, Cybersecurity, College of Southern Nevada (2025): 3.7 GPA, High Honors, Phi Theta Kappa
+- **Now:** B.S. in Cloud Computing, Western Governors University (starting November 2026)
+- **Training:** Cisco Networking Academy CCNAv7 (Introduction to Networks; Switching, Routing and Wireless Essentials; Enterprise Networking, Security and Automation) and NDG Linux I
+- **Projects:** [PowerShell Network Security Toolkit](https://github.com/EdwardOconnell/powershell-network-security-toolkit) (PowerShell 7) and this XP edition
 
 ## Copyright
 
